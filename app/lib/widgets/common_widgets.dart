@@ -24,6 +24,14 @@ String todayIso() {
   return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
 }
 
+/// Horodatage SQLite (« AAAA-MM-JJ HH:MM:SS », en UTC) → « AAAA-MM-JJ HH:MM » à l'heure locale.
+String localStamp(dynamic utc) {
+  final d = DateTime.tryParse('${'${utc ?? ''}'.replaceFirst(' ', 'T')}Z')?.toLocal();
+  if (d == null) return '${utc ?? ''}';
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+}
+
 /// "Aujourd'hui" / "Demain" / nom du jour, selon l'indice de jour (0 = lundi).
 String dayLabel(int day) {
   final k = (day - (DateTime.now().weekday - 1) + 7) % 7;
@@ -51,6 +59,77 @@ class Empty extends StatelessWidget {
       );
 }
 
+/// Chargement / erreur avec bouton Réessayer / contenu.
+class AsyncBody extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
+  final Widget Function() builder;
+  const AsyncBody({super.key, required this.loading, required this.error, required this.onRetry, required this.builder});
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+    if (error != null) return Empty(Icons.wifi_off, error!, cta: 'Réessayer', onTap: onRetry);
+    return builder();
+  }
+}
+
+/// Boîte de confirmation (renvoie true si l'utilisateur confirme).
+Future<bool> confirm(BuildContext context, String title, {String? body, String ok = 'Confirmer'}) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text(title),
+        content: body == null ? null : Text(body),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(ok)),
+        ],
+      ),
+    ) ==
+    true;
+
+/// Exécute un appel réseau et affiche l'erreur éventuelle ; renvoie true en cas de succès.
+Future<bool> attempt(BuildContext context, Future<void> Function() f, {String? success}) async {
+  try {
+    await f();
+    if (success != null && context.mounted) snack(context, success);
+    return true;
+  } catch (e) {
+    if (context.mounted) snack(context, '$e');
+    return false;
+  }
+}
+
+/// Cloche des notifications avec pastille du nombre de non lues.
+class NotificationBell extends StatefulWidget {
+  final Widget Function() page;
+  const NotificationBell({super.key, required this.page});
+  @override
+  State<NotificationBell> createState() => _NotificationBellState();
+}
+
+class _NotificationBellState extends State<NotificationBell> {
+  @override
+  void initState() {
+    super.initState();
+    Api.refreshUnread();
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: Api.unread,
+        builder: (_, n, _) => IconButton(
+          tooltip: 'Notifications',
+          icon: Badge(isLabelVisible: n > 0, label: Text(n > 99 ? '99+' : '$n'), child: Icon(n > 0 ? Icons.notifications_active : Icons.notifications_none)),
+          onPressed: () async {
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => widget.page()));
+            Api.refreshUnread();
+          },
+        ),
+      );
+}
+
 Widget sectionTitle(BuildContext c, String t) => Padding(
       padding: const EdgeInsets.fromLTRB(4, 18, 4, 6),
       child: Text(t, style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
@@ -58,14 +137,22 @@ Widget sectionTitle(BuildContext c, String t) => Padding(
 
 Widget kpiCard(BuildContext c, IconData i, String label, String value, {Color? color}) => Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(i, color: color ?? Theme.of(c).colorScheme.primary),
           const SizedBox(height: 4),
-          Text(value, style: Theme.of(c).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          Text(label, style: Theme.of(c).textTheme.bodySmall),
+          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: Theme.of(c).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold))),
+          Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(c).textTheme.bodySmall),
         ]),
       ),
+    );
+
+/// Grille d'indicateurs : colonnes adaptées à la largeur, hauteur fixe (pas de débordement sur écran étroit).
+Widget kpiGrid(List<Widget> children) => GridView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisExtent: 132),
+      children: children,
     );
 
 Future<String?> pickMethod(BuildContext context, String title) {

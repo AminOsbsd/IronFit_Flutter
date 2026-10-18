@@ -1,8 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Accès au serveur IronFit (aussi nécessaire en release, pas seulement en debug) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic : le serveur local est en HTTP (http://IP-DU-PC:3000).
+         En production, servir l'API en HTTPS et retirer cet attribut. -->
     <application
-        android:label="ironfit"
+        android:label="IronFit"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

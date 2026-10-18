@@ -22,7 +22,7 @@ class IronFitApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: Api.authChanged,
-      builder: (_, __, ___) => MaterialApp(
+      builder: (_, _, _) => MaterialApp(
         title: 'IronFit',
         debugShowCheckedModeBanner: false,
         navigatorKey: Api.navKey,

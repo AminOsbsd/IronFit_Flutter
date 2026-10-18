@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/module.dart';
+import '../widgets/common_widgets.dart';
 
-/// Écran CRUD générique : liste + recherche + ajout / modification / suppression.
+/// Écran CRUD générique : liste paginée + recherche côté serveur + ajout / modification / suppression.
 class CrudPage extends StatefulWidget {
   final Module module;
   const CrudPage(this.module, {super.key});
@@ -11,13 +13,18 @@ class CrudPage extends StatefulWidget {
 }
 
 class _CrudPageState extends State<CrudPage> {
+  static const pageSize = 50;
   List<Map<String, dynamic>> items = [];
-  bool loading = true;
+  bool loading = true, more = false, loadingMore = false;
   String? error;
   String q = '';
+  Timer? _debounce;
 
   Module get m => widget.module;
   bool get canWrite => m.write.contains(Api.role);
+  bool canEdit(Map<String, dynamic> x) => canWrite && (m.canEditRow?.call(x) ?? true);
+
+  String endpoint(int offset) => Api.withQuery(m.endpoint, {...?m.query?.call(), 'q': q.trim(), 'limit': pageSize, 'offset': offset});
 
   @override
   void initState() {
@@ -25,18 +32,42 @@ class _CrudPageState extends State<CrudPage> {
     load();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
   Future<void> load([bool silent = false]) async {
     if (!silent) setState(() { loading = true; error = null; });
     try {
       await Refs.load();
-      var l = await Api.list(m.endpoint);
-      if (m.filter != null) l = l.where(m.filter!).toList();
+      final l = await Api.list(endpoint(0));
       items = l;
+      more = l.length == pageSize;
       error = null;
     } catch (e) {
       error = '$e';
     }
     if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> loadMore() async {
+    setState(() => loadingMore = true);
+    try {
+      final l = await Api.list(endpoint(items.length));
+      items = [...items, ...l];
+      more = l.length == pageSize;
+    } catch (e) {
+      if (mounted) snack(context, '$e');
+    }
+    if (mounted) setState(() => loadingMore = false);
+  }
+
+  void search(String s) {
+    q = s;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => load(true));
   }
 
   Future<void> edit([Map<String, dynamic>? item]) async {
@@ -48,32 +79,46 @@ class _CrudPageState extends State<CrudPage> {
   }
 
   Future<void> remove(Map<String, dynamic> x) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Supprimer ${m.singular} ?'),
-        content: Text(m.titleOf(x)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Supprimer')),
-        ],
+    if (!await confirm(context, 'Supprimer ${m.singular} ?', body: m.titleOf(x), ok: 'Supprimer')) return;
+    if (!mounted) return;
+    if (await attempt(context, () => Api.call('DELETE', '${m.endpoint}/${x['id']}'))) load(true);
+  }
+
+  Widget tile(BuildContext c, Map<String, dynamic> x) {
+    final act = m.action?.call(c, x, () => load(true));
+    final extra = m.menu?.call(x) ?? const <RowMenu>[];
+    final editable = canEdit(x);
+    final badge = m.badge?.call(x);
+    return Card(
+      child: ListTile(
+        title: Text(m.titleOf(x)),
+        subtitle: Text(m.subtitleOf(x)),
+        onTap: editable ? () => edit(x) : null,
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          ?badge,
+          ?act,
+          if (editable || (canWrite && extra.isNotEmpty))
+            PopupMenuButton<Object>(
+              onSelected: (v) async {
+                if (v == 'e') return edit(x);
+                if (v == 'd') return remove(x);
+                if (v is RowMenu && await attempt(context, () => v.run(context, x))) load(true);
+              },
+              itemBuilder: (_) => [
+                if (editable) const PopupMenuItem(value: 'e', child: ListTile(leading: Icon(Icons.edit), title: Text('Modifier'))),
+                for (final r in extra) PopupMenuItem(value: r, child: ListTile(leading: Icon(r.icon), title: Text(r.label))),
+                if (editable) const PopupMenuItem(value: 'd', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Supprimer'))),
+              ],
+            ),
+        ]),
       ),
     );
-    if (ok != true) return;
-    try {
-      await Api.call('DELETE', '${m.endpoint}/${x['id']}');
-      load(true);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ql = q.toLowerCase();
-    final shown = items.where((x) => '${m.titleOf(x)} ${m.subtitleOf(x)}'.toLowerCase().contains(ql)).toList();
     return Scaffold(
-      appBar: AppBar(title: Text(m.title), actions: [IconButton(onPressed: () => load(), icon: const Icon(Icons.refresh))]),
+      appBar: AppBar(title: Text(m.title), actions: [IconButton(tooltip: 'Actualiser', onPressed: () => load(), icon: const Icon(Icons.refresh))]),
       floatingActionButton: canWrite
           ? FloatingActionButton.extended(onPressed: () => edit(), icon: const Icon(Icons.add), label: const Text('Ajouter'))
           : null,
@@ -82,54 +127,36 @@ class _CrudPageState extends State<CrudPage> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
             decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Rechercher…', border: OutlineInputBorder(), isDense: true),
-            onChanged: (s) => setState(() => q = s),
+            onChanged: search,
           ),
         ),
         Expanded(
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text(error!, textAlign: TextAlign.center),
-                          const SizedBox(height: 12),
-                          FilledButton(onPressed: () => load(), child: const Text('Réessayer')),
-                        ]),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () => load(true),
-                      child: shown.isEmpty
-                          ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 120), Center(child: Text('Aucun élément'))])
-                          : ListView.builder(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
-                              itemCount: shown.length,
-                              itemBuilder: (c, i) {
-                                final x = shown[i];
-                                final act = m.action?.call(c, x, () => load(true));
-                                return Card(
-                                  child: ListTile(
-                                    title: Text(m.titleOf(x)),
-                                    subtitle: Text(m.subtitleOf(x)),
-                                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                      if (act != null) act,
-                                      if (canWrite)
-                                        PopupMenuButton<String>(
-                                          onSelected: (v) => v == 'e' ? edit(x) : remove(x),
-                                          itemBuilder: (_) => const [
-                                            PopupMenuItem(value: 'e', child: Text('Modifier')),
-                                            PopupMenuItem(value: 'd', child: Text('Supprimer')),
-                                          ],
-                                        ),
-                                    ]),
-                                  ),
-                                );
-                              },
+          child: AsyncBody(
+            loading: loading,
+            error: error,
+            onRetry: load,
+            builder: () => RefreshIndicator(
+              onRefresh: () => load(true),
+              child: items.isEmpty
+                  ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+                      const SizedBox(height: 60),
+                      Empty(m.icon, q.isEmpty ? 'Aucun élément' : 'Aucun résultat pour « $q »'),
+                    ])
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+                      itemCount: items.length + (more ? 1 : 0),
+                      itemBuilder: (c, i) => i < items.length
+                          ? tile(c, items[i])
+                          : Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Center(
+                                child: loadingMore ? const CircularProgressIndicator() : OutlinedButton.icon(onPressed: loadMore, icon: const Icon(Icons.expand_more), label: const Text('Charger plus')),
+                              ),
                             ),
                     ),
+            ),
+          ),
         ),
       ]),
     );
@@ -137,10 +164,6 @@ class _CrudPageState extends State<CrudPage> {
 }
 
 String _two(int n) => n.toString().padLeft(2, '0');
-String todayStr() {
-  final n = DateTime.now();
-  return '${n.year}-${_two(n.month)}-${_two(n.day)}';
-}
 
 class FormSheet extends StatefulWidget {
   final Module m;
@@ -158,14 +181,15 @@ class _FormSheetState extends State<FormSheet> {
 
   Module get m => widget.m;
   Map<String, dynamic>? get item => widget.item;
+  List<Field> get fields => m.fields.where((f) => f.visible).toList();
 
   @override
   void initState() {
     super.initState();
-    for (final f in m.fields) {
+    for (final f in fields) {
       if (f.type == FT.password) continue;
       dynamic x = item?[f.key];
-      if (x == null && item == null && f.today) x = todayStr();
+      if (x == null && item == null) x = f.today ? todayIso() : f.initial;
       v[f.key] = x;
     }
   }
@@ -177,11 +201,11 @@ class _FormSheetState extends State<FormSheet> {
         final o = f.options ?? Refs.options(f.ref!);
         final Object? cur = o.containsKey(v[f.key]) ? v[f.key] as Object? : null;
         return DropdownButtonFormField<Object?>(
-          value: cur,
+          initialValue: cur,
           isExpanded: true,
           decoration: InputDecoration(labelText: label),
           items: [
-            const DropdownMenuItem<Object?>(value: null, child: Text('—')),
+            if (!f.required) const DropdownMenuItem<Object?>(value: null, child: Text('—')),
             for (final e in o.entries) DropdownMenuItem<Object?>(value: e.key, child: Text(e.value)),
           ],
           onChanged: (x) => v[f.key] = x,
@@ -208,7 +232,12 @@ class _FormSheetState extends State<FormSheet> {
               if (item == null && s.isEmpty) return 'Obligatoire';
               if (s.isNotEmpty && s.length < 6) return '6 caractères minimum';
             }
-            if (f.type == FT.number && s.isNotEmpty && double.tryParse(s.replaceAll(',', '.')) == null) return 'Nombre invalide';
+            if (f.type == FT.email && s.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s)) return 'E-mail invalide';
+            if (f.type == FT.number && s.isNotEmpty) {
+              final n = double.tryParse(s.replaceAll(',', '.'));
+              if (n == null) return 'Nombre invalide';
+              if (n < 0) return 'Doit être positif';
+            }
             return null;
           },
         );
@@ -218,8 +247,8 @@ class _FormSheetState extends State<FormSheet> {
   Future<void> save() async {
     if (!formKey.currentState!.validate()) return;
     setState(() { busy = true; err = null; });
-    final body = <String, dynamic>{...m.extra};
-    for (final f in m.fields) {
+    final body = <String, dynamic>{};
+    for (final f in fields) {
       dynamic x = v[f.key];
       if (x is String) {
         x = x.trim();
@@ -247,7 +276,7 @@ class _FormSheetState extends State<FormSheet> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('${item == null ? "Ajouter" : "Modifier"} ${m.singular}', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            for (final f in m.fields) Padding(padding: const EdgeInsets.only(top: 8), child: field(f)),
+            for (final f in fields) Padding(padding: const EdgeInsets.only(top: 8), child: field(f)),
             if (err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(err!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
             const SizedBox(height: 16),
             Row(children: [

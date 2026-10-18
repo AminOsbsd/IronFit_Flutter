@@ -5,9 +5,11 @@ import 'crud_screen.dart';
 import '../models/module.dart';
 
 /// Planning hebdomadaire : puces de jours + séances du jour choisi.
-/// Athlète : réserver / annuler. Coach & admin : participants et pointage.
+/// [manage] = false : réserver / annuler (membre, ou coach dans son espace perso).
+/// [manage] = true : participants et pointage (admin : tous les cours ; coach : ses cours).
 class PlanningPage extends StatefulWidget {
-  const PlanningPage({super.key});
+  final bool manage;
+  const PlanningPage({super.key, this.manage = false});
   @override
   State<PlanningPage> createState() => _PlanningPageState();
 }
@@ -17,7 +19,8 @@ class _PlanningPageState extends State<PlanningPage> {
   List<Map<String, dynamic>> classes = [];
   bool loading = true;
   String? error;
-  bool get staff => Api.role != 'athlete';
+  bool get manage => widget.manage;
+  bool mineToRun(Map<String, dynamic> c) => Api.isAdmin || c['coach_id'] == Api.myId;
 
   @override
   void initState() {
@@ -36,12 +39,7 @@ class _PlanningPageState extends State<PlanningPage> {
   }
 
   Future<void> book(Map<String, dynamic> c) async {
-    try {
-      await Api.call('POST', 'book', {'class_id': c['id']});
-      await load();
-    } catch (e) {
-      snack(context, '$e');
-    }
+    if (await attempt(context, () => Api.call('POST', 'book', {'class_id': c['id']}))) await load();
   }
 
   Widget tile(Map<String, dynamic> c) {
@@ -63,8 +61,17 @@ class _PlanningPageState extends State<PlanningPage> {
             ]),
           ),
           const SizedBox(width: 12),
-          if (staff)
-            OutlinedButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ParticipantsPage(c))), child: const Text('Participants'))
+          if (manage)
+            mineToRun(c)
+                ? OutlinedButton(
+                    onPressed: () async {
+                      await Navigator.push(context, MaterialPageRoute(builder: (_) => ParticipantsPage(c)));
+                      load();
+                    },
+                    child: const Text('Participants'))
+                : const SizedBox.shrink()
+          else if (c['coach_id'] == Api.myId)
+            const Chip(label: Text('Vous animez'))
           else if (mine)
             OutlinedButton(onPressed: () => book(c), child: const Text('Annuler'))
           else
@@ -80,7 +87,7 @@ class _PlanningPageState extends State<PlanningPage> {
     final list = classes.where((c) => c['day'] == day).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Planning'), actions: [
-        if (staff)
+        if (manage)
           IconButton(
             tooltip: 'Gérer les séances',
             icon: const Icon(Icons.edit_calendar),
@@ -102,7 +109,7 @@ class _PlanningPageState extends State<PlanningPage> {
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       itemCount: 7,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
                       itemBuilder: (_, i) {
                         final n = classes.where((c) => c['day'] == i).length;
                         return ChoiceChip(label: Text('${dayShort[i]}${i == today ? " •" : ""}${n > 0 ? "  $n" : ""}'), selected: day == i, onSelected: (_) => setState(() => day = i));
@@ -114,7 +121,8 @@ class _PlanningPageState extends State<PlanningPage> {
                       onRefresh: load,
                       child: list.isEmpty
                           ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 60), Empty(Icons.event_busy, 'Aucune séance ce jour')])
-                          : ListView.builder(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(12, 0, 12, 16), itemCount: list.length, itemBuilder: (_, i) => tile(list[i])),
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(12, 0, 12, 16), itemCount: list.length, itemBuilder: (_, i) => tile(list[i])),
                     ),
                   ),
                 ]),
@@ -133,6 +141,7 @@ class ParticipantsPage extends StatefulWidget {
 class _ParticipantsPageState extends State<ParticipantsPage> {
   List<Map<String, dynamic>> list = [];
   bool loading = true;
+  String? error;
   bool get isToday => widget.cls['day'] == DateTime.now().weekday - 1;
 
   @override
@@ -142,17 +151,17 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
   }
 
   Future<void> load() async {
-    list = await safeList('classes/${widget.cls['id']}/participants');
+    try {
+      list = await Api.list('classes/${widget.cls['id']}/participants');
+      error = null;
+    } catch (e) {
+      error = '$e';
+    }
     if (mounted) setState(() => loading = false);
   }
 
   Future<void> mark(Map<String, dynamic> p) async {
-    try {
-      await Api.call('POST', 'classes/${widget.cls['id']}/present', {'member_id': p['id']});
-      await load();
-    } catch (e) {
-      snack(context, '$e');
-    }
+    if (await attempt(context, () => Api.call('POST', 'classes/${widget.cls['id']}/present', {'member_id': p['id']}))) await load();
   }
 
   @override
@@ -160,33 +169,36 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
     final present = list.where((p) => isTrue(p['present'])).length;
     return Scaffold(
       appBar: AppBar(title: Text('${widget.cls['title']} · ${widget.cls['time']}')),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(children: [
-              Container(
-                width: double.infinity,
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                padding: const EdgeInsets.all(12),
-                child: Text(isToday ? '$present / ${list.length} présents aujourd\'hui' : 'Le pointage est possible uniquement le jour de la séance (${dayLabel(widget.cls['day'] as int)}).'),
-              ),
-              Expanded(
-                child: list.isEmpty
-                    ? const Empty(Icons.people_outline, 'Aucune réservation pour cette séance')
-                    : ListView(padding: const EdgeInsets.all(12), children: [
-                        for (final p in list)
-                          Card(
-                            child: ListTile(
-                              leading: CircleAvatar(child: Text('${p['name']}'[0].toUpperCase())),
-                              title: Text('${p['name']}'),
-                              subtitle: Text('${p['phone'] ?? 'Pas de téléphone'}'),
-                              trailing: isTrue(p['present'])
-                                  ? const Chip(avatar: Icon(Icons.check_circle, color: Colors.green), label: Text('Présent'))
-                                  : FilledButton.tonal(onPressed: isToday ? () => mark(p) : null, child: const Text('Pointer')),
-                            ),
-                          ),
-                      ]),
-              ),
-            ]),
+      body: AsyncBody(
+        loading: loading,
+        error: error,
+        onRetry: load,
+        builder: () => Column(children: [
+          Container(
+            width: double.infinity,
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            padding: const EdgeInsets.all(12),
+            child: Text(isToday ? '$present / ${list.length} présents aujourd\'hui' : 'Le pointage est possible uniquement le jour de la séance (${dayLabel(widget.cls['day'] as int)}).'),
+          ),
+          Expanded(
+            child: list.isEmpty
+                ? const Empty(Icons.people_outline, 'Aucune réservation pour cette séance')
+                : ListView(padding: const EdgeInsets.all(12), children: [
+                    for (final p in list)
+                      Card(
+                        child: ListTile(
+                          leading: CircleAvatar(child: Text('${p['name']}'[0].toUpperCase())),
+                          title: Text('${p['name']}'),
+                          subtitle: Text('${p['phone'] ?? 'Pas de téléphone'}'),
+                          trailing: isTrue(p['present'])
+                              ? const Chip(avatar: Icon(Icons.check_circle, color: Colors.green), label: Text('Présent'))
+                              : FilledButton.tonal(onPressed: isToday ? () => mark(p) : null, child: const Text('Pointer')),
+                        ),
+                      ),
+                  ]),
+          ),
+        ]),
+      ),
     );
   }
 }

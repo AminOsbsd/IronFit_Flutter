@@ -1,0 +1,12 @@
+# Base de données locale, secret de signature des jetons et configuration : jamais versionnés
+backend/data/
+backend/.env
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Divers
+.DS_Store
+Thumbs.db
