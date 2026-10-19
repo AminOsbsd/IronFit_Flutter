@@ -1,9 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ironfit/app.dart';
+import 'package:ironfit/core/api/api.dart';
+import 'package:ironfit/core/api/token_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'package:ironfit/main.dart';
-import 'package:ironfit/services/api_service.dart';
-import 'package:ironfit/services/token_store.dart';
 
 void main() {
   testWidgets('IronFit starts on the login screen', (WidgetTester tester) async {

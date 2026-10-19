@@ -6,8 +6,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:ironfit/services/api_service.dart';
-import 'package:ironfit/services/token_store.dart';
+import 'package:ironfit/core/api/api.dart';
+import 'package:ironfit/core/api/token_store.dart';
 
 // Intégration Flutter ↔ serveur : lance le vrai backend Node (base temporaire) et l'interroge
 // avec le client Api de l'application. Ignoré si Node.js n'est pas installé.
@@ -32,15 +32,25 @@ void main() {
   setUpAll(() async {
     if (skip != null) return;
     data = await Directory.systemTemp.createTemp('ironfit-it-');
-    server = await Process.start('node', ['server.js'], workingDirectory: '../backend', environment: {
-      'DATA_DIR': data.path, 'PORT': '0', 'HOST': '127.0.0.1', 'RATE_LIMIT': '1000', 'SEED_DEMO': 'true', 'ADMIN_PASSWORD': 'admin123',
-    });
+    server = await Process.start(
+      'node',
+      ['server.js'],
+      workingDirectory: '../backend',
+      environment: {
+        'DATA_DIR': data.path,
+        'PORT': '0',
+        'HOST': '127.0.0.1',
+        'RATE_LIMIT': '1000',
+        'SEED_DEMO': 'true',
+        'ADMIN_PASSWORD': 'admin123',
+      },
+    );
     final port = Completer<String>();
     server.stdout.transform(utf8.decoder).listen((s) {
       final m = RegExp(r'localhost:(\d+)').firstMatch(s);
       if (m != null && !port.isCompleted) port.complete(m.group(1));
     });
-    server.stderr.transform(utf8.decoder).listen((s) => printOnFailure(s));
+    server.stderr.transform(utf8.decoder).listen(printOnFailure);
     Api.base = 'http://127.0.0.1:${await port.future.timeout(const Duration(seconds: 20))}';
     Api.client = http.Client();
     Api.store = MemoryTokenStore();
@@ -55,10 +65,14 @@ void main() {
     } catch (_) {}
   });
 
-  Future<void> loginAs(String login, [String password = '1234']) async => Api.setSession(await Api.call('POST', 'login', {'login': login, 'password': password}) as Map);
+  Future<void> loginAs(String login, [String password = '1234']) async =>
+      Api.setSession(await Api.call('POST', 'login', {'login': login, 'password': password}) as Map);
 
   test('connexion par rôle et refus des actions non autorisées', () async {
-    await expectLater(Api.call('POST', 'login', {'login': 'youssef', 'password': 'faux'}), throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Identifiant ou mot de passe incorrect')));
+    await expectLater(
+      Api.call('POST', 'login', {'login': 'youssef', 'password': 'faux'}),
+      throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Identifiant ou mot de passe incorrect')),
+    );
     await loginAs('youssef');
     expect(Api.isMember, isTrue);
     await expectLater(Api.call('GET', 'members'), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
@@ -70,7 +84,8 @@ void main() {
     expect(Api.isCoach && Api.isMember, isTrue);
     final pending = (await Api.list('coaching/clients')).firstWhere((l) => l['client_login'] == 'amira');
     await Api.call('POST', 'coaching/${pending['id']}/accept');
-    final prog = await Api.call('POST', 'programs', {'title': 'Cardio débutant', 'client_id': pending['client_id']}) as Map;
+    final prog =
+        await Api.call('POST', 'programs', {'title': 'Cardio débutant', 'client_id': pending['client_id']}) as Map;
     await Api.call('POST', 'programs/${prog['id']}/exercises', {'name': 'Rameur', 'sets': 3, 'reps': '5 min'});
 
     await loginAs('amira');
@@ -86,7 +101,10 @@ void main() {
 
     await loginAs('amira');
     final notes = await Api.get('notifications');
-    expect((notes['items'] as List).map((n) => n['title']), containsAll(['Demande de coaching acceptée', 'Nouveau programme', 'Nouveau commentaire de votre coach']));
+    expect(
+      jsonList(notes, 'items').map((n) => n['title']),
+      containsAll(['Demande de coaching acceptée', 'Nouveau programme', 'Nouveau commentaire de votre coach']),
+    );
   }, skip: skip);
 
   test('désactivation par l\'admin : la session du membre est coupée côté client', () async {

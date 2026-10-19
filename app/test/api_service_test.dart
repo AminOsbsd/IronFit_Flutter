@@ -1,17 +1,22 @@
 import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:ironfit/core/api/api.dart';
+import 'package:ironfit/core/api/token_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ironfit/services/api_service.dart';
-import 'package:ironfit/services/token_store.dart';
+
 import 'helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('withQuery ignore les valeurs vides et encode les paramètres', () {
-    expect(Api.withQuery('members', {'q': 'élan vital', 'role': null, 'limit': 50, 'x': ''}), 'members?q=%C3%A9lan+vital&limit=50');
+    expect(
+      Api.withQuery('members', {'q': 'élan vital', 'role': null, 'limit': 50, 'x': ''}),
+      'members?q=%C3%A9lan+vital&limit=50',
+    );
     expect(Api.withQuery('programs?scope=coaching', {'client_id': 3}), 'programs?scope=coaching&client_id=3');
     expect(Api.withQuery('plans', {}), 'plans');
   });
@@ -40,7 +45,10 @@ void main() {
 
   test('le message d\'erreur du serveur est remonté ; un 401 déconnecte', () async {
     await signedIn(athlete, {'POST book': http.Response.bytes(utf8.encode('{"error":"Séance complète"}'), 409)});
-    await expectLater(Api.call('POST', 'book', {'class_id': 1}), throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Séance complète')));
+    await expectLater(
+      Api.call('POST', 'book', {'class_id': 1}),
+      throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Séance complète')),
+    );
 
     Api.client = MockClient((_) async => http.Response('{"error":"Session expirée"}', 401));
     await expectLater(Api.call('GET', 'me'), throwsA(isA<ApiException>()));
@@ -54,7 +62,13 @@ void main() {
     Api.client = MockClient((_) async => throw Exception('SocketException: secret interne'));
     await expectLater(
       Api.call('GET', 'classes'),
-      throwsA(isA<ApiException>().having((e) => e.message, 'message', allOf(contains('Serveur injoignable'), isNot(contains('secret'))))),
+      throwsA(
+        isA<ApiException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('Serveur injoignable'), isNot(contains('secret'))),
+        ),
+      ),
     );
   });
 

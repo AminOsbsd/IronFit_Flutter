@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:ironfit/main.dart';
-import 'package:ironfit/models/module.dart';
-import 'package:ironfit/services/api_service.dart';
+import 'package:ironfit/app.dart';
+import 'package:ironfit/core/api/api.dart';
+import 'package:ironfit/features/crud/module_catalogue.dart';
+
 import 'helpers.dart';
 
 void main() {
@@ -15,7 +16,8 @@ void main() {
   }
 
   NavigationBar navBar(WidgetTester tester) => tester.widget<NavigationBar>(find.byType(NavigationBar));
-  List<String> tabs(WidgetTester tester) => navBar(tester).destinations.map((d) => (d as NavigationDestination).label).toList();
+  List<String> tabs(WidgetTester tester) =>
+      navBar(tester).destinations.map((d) => (d as NavigationDestination).label).toList();
 
   testWidgets('un membre voit l\'espace membre, sans administration ni bascule coach', (tester) async {
     await signedIn(athlete);
@@ -40,7 +42,15 @@ void main() {
   testWidgets('un coach bascule entre son entraînement et son espace coach', (tester) async {
     await signedIn(coach, {
       'GET coaching/clients': [
-        {'id': 9, 'coach_id': 2, 'client_id': 5, 'status': 'pending', 'client_name': 'Amira Jlassi', 'client_login': 'amira', 'created': '2026-10-01 10:00:00'},
+        {
+          'id': 9,
+          'coach_id': 2,
+          'client_id': 5,
+          'status': 'pending',
+          'client_name': 'Amira Jlassi',
+          'client_login': 'amira',
+          'created': '2026-10-01 10:00:00',
+        },
       ],
     });
     await open(tester);
