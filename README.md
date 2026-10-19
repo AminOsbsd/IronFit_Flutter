@@ -7,6 +7,16 @@ IronFit est une application de gestion de salle de sport composée :
 
 ---
 
+## Captures d'écran
+
+| Connexion | Accueil membre | Espace coach | Administration |
+|---|---|---|---|
+| ![Connexion](docs/screenshots/login.png) | ![Accueil membre](docs/screenshots/member-home.png) | ![Espace coach](docs/screenshots/coach-home.png) | ![Administration](docs/screenshots/admin-home.png) |
+
+> _À compléter :_ ajouter les captures dans `docs/screenshots/` sous ces noms.
+
+---
+
 ## Sommaire
 
 1. [Objectifs et fonctionnalités](#1-objectifs-et-fonctionnalités)
@@ -75,6 +85,7 @@ IronFit est une application de gestion de salle de sport composée :
 
 ```
 IronFit_Flutter/
+├─ docs/AUDIT.md                Audit du code, décision d'architecture (ADR-001), plan de tests
 ├─ 1-lancer-serveur.bat          Lance l'API (Windows)
 ├─ 2-lancer-app-flutter.bat      Lance l'app Flutter Windows (pub get + run)
 ├─ backend/
@@ -102,27 +113,31 @@ IronFit_Flutter/
 │  └─ data/                      (non versionné) gym.db + secret générés au premier lancement
 └─ app/
    ├─ pubspec.yaml
+   ├─ analysis_options.yaml      Règles d'analyse strictes (strict-casts, lints supplémentaires)
    ├─ lib/
-   │  ├─ main.dart               Thème, localisation, routage connexion / accueil
-   │  ├─ services/
-   │  │  ├─ api_service.dart     Client REST, session, rôles, espace coach, notifications
-   │  │  └─ token_store.dart     Stockage sécurisé du jeton
-   │  ├─ models/module.dart      Définition déclarative des modules CRUD (champs, rôles, règles)
-   │  ├─ widgets/
-   │  │  ├─ common_widgets.dart  États vide/erreur, KPI, graphiques, cloche, confirmations
-   │  │  └─ form_dialog.dart     Boîte de saisie générique
-   │  └─ screens/
-   │     ├─ auth_screen.dart          Connexion, inscription, mot de passe oublié
-   │     ├─ home_shell.dart           Navigation par rôle, bascule d'espace coach, Administration/Gestion, Profil
-   │     ├─ member_screens.dart       Accueil membre, Explorer, Mon espace, progression, présences
-   │     ├─ coaches_screen.dart       Annuaire des coachs, mes coachs
-   │     ├─ program_screens.dart      Programmes, exercices, séances réalisées
-   │     ├─ coach_screens.dart        Accueil coach, clients, suivi d'un client
-   │     ├─ admin_screens.dart        Tableau de bord admin, demandes, suivis coaching
-   │     ├─ planning_screen.dart      Planning hebdomadaire, réservations, participants, pointage
-   │     ├─ crud_screen.dart          Écran CRUD générique (pagination, recherche serveur)
-   │     └─ notifications_screen.dart
-   ├─ test/                      Tests unitaires, widgets et intégration avec le vrai serveur
+   │  ├─ main.dart               Démarrage : initialise l'API puis lance l'app
+   │  ├─ app.dart                MaterialApp, thème, localisation, connexion ↔ accueil selon la session
+   │  ├─ core/                   Partagé par toutes les fonctionnalités (n'importe aucun écran)
+   │  │  ├─ api/                 api.dart (client REST, session, rôles, espace coach, notifications),
+   │  │  │                       token_store.dart (stockage sécurisé du jeton), refs.dart (listes de référence)
+   │  │  ├─ theme/               app_theme.dart (Material 3 clair/sombre), app_colors.dart (succès/attention/danger),
+   │  │  │                       spacing.dart (échelle d'espacement)
+   │  │  ├─ utils/               dates.dart (ISO, libellés français, horodatages), values.dart (lecture des valeurs JSON)
+   │  │  └─ widgets/             async_view.dart (AsyncLoadMixin/AsyncStateView), empty_state, kpi, charts,
+   │  │                          feedback (confirmations, messages, avatar), form_dialog (saisie générique)
+   │  └─ features/               Une fonctionnalité = un dossier (écrans + logique propre)
+   │     ├─ auth/                Connexion, inscription, mot de passe oublié, adresse du serveur
+   │     ├─ shell/               Navigation par rôle, bascule d'espace coach, Administration/Gestion, cloche
+   │     ├─ crud/                Module/Field, catalogue des modules, écran CRUD générique (pagination, recherche serveur)
+   │     ├─ planning/            Planning hebdomadaire, réservation, participants et pointage
+   │     ├─ member/              Accueil membre, Explorer, Mon espace, progression, présences, statut d'abonnement
+   │     ├─ coaching/            Annuaire des coachs, mes coachs
+   │     ├─ programs/            Programmes, exercices, séances réalisées
+   │     ├─ coach/               Accueil coach, clients, suivi d'un client
+   │     ├─ admin/               Tableau de bord admin, demandes d'abonnement, suivis coaching
+   │     ├─ notifications/       Notifications personnelles
+   │     └─ profile/             Profil, modification, mot de passe, déconnexion
+   ├─ test/                      core/, features/, widgets/ + tests historiques (API, navigation, intégration)
    ├─ android/ windows/ web/     Plateformes cibles
    └─ setup.bat                  pub get + run Windows
 ```
@@ -131,15 +146,17 @@ IronFit_Flutter/
 
 ## 4. Application Flutter
 
-- **État** : volontairement simple — `StatefulWidget` + services statiques. `Api` (dans `api_service.dart`) porte la session, et trois `ValueNotifier` pilotent l'interface : `authChanged` (connexion/déconnexion → `MaterialApp`), `workspace` (espace du coach) et `unread` (pastille de notifications).
-- **Navigation** (`home_shell.dart`) :
+- **État** : volontairement simple et identique partout, sans bibliothèque supplémentaire (voir ADR-001 dans [docs/AUDIT.md](docs/AUDIT.md)). `Api` (`core/api/api.dart`) porte la session, et trois `ValueNotifier` pilotent l'interface : `authChanged` (connexion/déconnexion), `workspace` (espace du coach) et `unread` (pastille de notifications). Chaque écran qui charge des données utilise `AsyncLoadMixin` : `fetch()` → `loading` / `error` (bouton « Réessayer ») / `data`, et `reload()` pour Actualiser, le tirer-pour-rafraîchir et après chaque action.
+- **Navigation** (`features/shell/home_shell.dart`) :
   - Membre : Accueil · Planning · Explorer · Mon espace · Profil
   - Coach, « Mon entraînement » : identique au membre
   - Coach, « Espace coach » : Accueil · Planning · Clients · Gestion · Profil
   - Admin : Accueil · Planning · **Administration** · Profil
   - La bascule du coach est un sélecteur au-dessus de la barre de navigation ; le choix est mémorisé.
-- **Modules CRUD** : `models/module.dart` décrit chaque entité (champs, types, rôles qui lisent/écrivent, règle par ligne `canEditRow`, paramètres serveur `query`, actions de menu). `CrudPage` fournit liste paginée (50 par page), recherche côté serveur, formulaire validé, suppression avec confirmation.
-- **Règle de dépendance** : `services` et `models` n'importent jamais d'écran ; les `widgets` n'importent pas d'écran (la cloche reçoit la page à ouvrir en paramètre).
+- **Modules CRUD** : `features/crud/module_catalogue.dart` décrit chaque entité (champs, types, rôles qui lisent/écrivent, règle par ligne `canEditRow`, paramètres serveur `query`, actions de menu). `CrudPage` fournit liste paginée (50 par page), recherche côté serveur, formulaire validé, suppression avec confirmation.
+- **Règle de dépendance** : `core/` n'importe jamais `features/` ; une fonctionnalité peut utiliser `core/` et ouvrir l'écran d'une autre fonctionnalité.
+- **Thème** : tout vient de `core/theme/` (couleur de marque `#EA580C`, couleurs d'état `AppColors`, espacements `Gaps`). Les écrans n'utilisent pas de `Colors.*` en dur, sauf le texte blanc de la carte membre posé sur un dégradé fixe contrasté.
+- **Accessibilité (WCAG 2.1 AA)** : contrastes ≥ 4,5:1, infobulle sur chaque bouton-icône, un libellé lisible par carte d'indicateur, graphique, puce de jour, carte membre et notification non lue, titres de section annoncés, erreurs de formulaire annoncées (région live), grilles et bandeaux dont la hauteur suit la taille du texte.
 - **Robustesse** : chaque écran gère chargement / erreur avec « Réessayer » / état vide ; délai réseau de 15 s ; un 401 déconnecte automatiquement ; messages d'erreur du serveur affichés tels quels, sans détail technique.
 - **Adresse du serveur** : roue dentée sur l'écran de connexion, ou Profil → Adresse du serveur. Valeurs par défaut : `http://127.0.0.1:3000` (Windows), `http://10.0.2.2:3000` (émulateur Android), `http://<hôte de la page>:3000` (Web).
 
@@ -445,15 +462,17 @@ cd backend && npm test
 
 # Application : analyse statique + tests unitaires, widgets et intégration
 cd app
-flutter analyze
-flutter test                                    # tous les tests
+flutter analyze                                 # règles strictes (analysis_options.yaml)
+flutter test                                    # 86 tests
+flutter test --coverage                         # rapport dans coverage/lcov.info
+flutter build apk --debug                       # vérifie la compilation Android
 flutter test test/backend_integration_test.dart # app ↔ vrai serveur Node (ignoré si Node absent)
 ```
 
 Couverture des tests :
 
 - **Serveur** (`backend/test/api.test.js`) : connexion, jeton falsifié, inscription (rôle imposé), révocation après changement de mot de passe, réinitialisation, désactivation, limitation de débit, 404/405/JSON invalide ; droits membre/coach/admin ; isolation coach ↔ clients (mesures, membres, séances) ; cycle demande → acceptation → fin de suivi ; rétrogradation d'un coach ; double rôle (réservation, abonnement, séparation des programmes) ; cycle programme → séance → commentaire → notifications ; validation des cours, propriété des cours et annonces, notifications d'annulation ; demande d'abonnement → validation ; statistiques ; migration v1 → v2.
-- **Application** : client API (en-tête Bearer, restauration de session, migration du jeton en clair, erreurs, 401 → déconnexion, serveur injoignable), navigation par rôle (membre, admin, bascule coach), règles d'interface des modules, formulaires d'inscription.
+- **Application** (86 tests) : client API (en-tête Bearer, restauration de session, migration du jeton en clair, erreurs, 401 → déconnexion, serveur injoignable, délai dépassé, réponses non JSON, adresse sans `http://`), listes de référence par rôle, navigation par rôle (membre, admin, bascule coach), règles des modules (catalogue, visibilité, validation, corps de requête), calculs (abonnement, tableaux de bord, séances, progression), widgets partagés (sémantique des indicateurs et graphiques, absence de débordement à 1×/1,5×/2×, chargement/erreur/réessayer), écrans (réservation, CRUD avec recherche serveur, droits en lecture seule) et tests de non-régression des bugs corrigés (noms vides, date d'abonnement invalide, quitter les notifications pendant une requête, date future dans le sélecteur). Couverture de `core/` : 81 à 100 %.
 - **Intégration** (`app/test/backend_integration_test.dart`) : le client `Api` de l'app contre le vrai serveur — refus 403, parcours complet coach ↔ client, déconnexion forcée après désactivation.
 
 ---
@@ -488,7 +507,7 @@ Couverture des tests :
 
 ## 20. Limites connues et pistes d'amélioration
 
-- **Vérifié dans l'environnement de développement** : analyse Flutter sans avertissement, tous les tests serveur/app/intégration, compilation **Web** et parcours réel dans Chrome (membre-coach, coach, admin). **Non vérifié ici** : compilation Windows (Visual Studio absent) et Android (SDK absent).
+- **Vérifié** : analyse Flutter sans avertissement avec les règles strictes, tous les tests serveur/app/intégration, compilation **Web** et parcours réel dans Chrome (membre-coach, coach, admin), compilation **Android** (`flutter build apk --debug`). **Non vérifié** : compilation Windows (Visual Studio et Mode développeur requis).
 - Pas d'envoi d'e-mail ni de notifications push : les notifications sont lues à l'ouverture des écrans d'accueil.
 - Le planning est hebdomadaire et récurrent (pas de cours datés ni de fermetures exceptionnelles) ; une présence est liée à la date et à l'intitulé du cours.
 - Paiement en ligne non géré (paiement à l'accueil, validé par l'admin).
