@@ -1,0 +1,4 @@
+tags:
+  integration:
+    # Lance le vrai serveur Node (backend/) sur une base temporaire ; ignoré si Node.js est absent
+    timeout: 2x
