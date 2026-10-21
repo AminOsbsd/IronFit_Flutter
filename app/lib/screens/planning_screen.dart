@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../models/module.dart';
+import '../services/planning_service.dart';
+import '../services/user_service.dart' show Json;
 import '../widgets/common_widgets.dart';
 import 'crud_screen.dart';
-import '../models/module.dart';
 
-/// Planning hebdomadaire : puces de jours + séances du jour choisi.
-/// Athlète : réserver / annuler. Coach & admin : participants et pointage.
+/// Planning hebdomadaire : sélecteur de jour + cours du jour choisi.
+/// [manage] = false : réserver / annuler (membre, ou coach dans son espace perso).
+/// [manage] = true : participants et pointage (admin : tous les cours ; coach : ses cours).
 class PlanningPage extends StatefulWidget {
-  const PlanningPage({super.key});
+  final bool manage;
+  const PlanningPage({super.key, this.manage = false});
   @override
   State<PlanningPage> createState() => _PlanningPageState();
 }
 
 class _PlanningPageState extends State<PlanningPage> {
   int day = DateTime.now().weekday - 1;
-  List<Map<String, dynamic>> classes = [];
+  List<Json> classes = [];
   bool loading = true;
   String? error;
-  bool get staff => Api.role != 'athlete';
+  bool get manage => widget.manage;
+  bool mineToRun(Json c) => Api.isAdmin || c['coach_id'] == Api.myId;
 
   @override
   void initState() {
@@ -27,7 +33,7 @@ class _PlanningPageState extends State<PlanningPage> {
 
   Future<void> load() async {
     try {
-      classes = await Api.list('classes');
+      classes = await PlanningService.classes();
       error = null;
     } catch (e) {
       error = '$e';
@@ -35,41 +41,90 @@ class _PlanningPageState extends State<PlanningPage> {
     if (mounted) setState(() => loading = false);
   }
 
-  Future<void> book(Map<String, dynamic> c) async {
-    try {
-      await Api.call('POST', 'book', {'class_id': c['id']});
-      await load();
-    } catch (e) {
-      snack(context, '$e');
-    }
+  Future<void> book(Json c) async {
+    if (await attempt(context, () => PlanningService.toggleBooking(c['id'] as int))) await load();
   }
 
-  Widget tile(Map<String, dynamic> c) {
+  Widget action(Json c, bool mine, bool full) {
+    if (manage) {
+      if (!mineToRun(c)) return const SizedBox.shrink();
+      return OutlinedButton.icon(
+        icon: const Icon(Icons.groups_rounded, size: 18),
+        label: const Text('Participants'),
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => ParticipantsPage(c)));
+          load();
+        },
+      );
+    }
+    if (c['coach_id'] == Api.myId) return const StatusPill('Vous animez', color: AppColors.info, icon: Icons.sports_rounded);
+    if (mine) return OutlinedButton(onPressed: () => book(c), child: const Text('Annuler'));
+    return FilledButton(onPressed: full ? null : () => book(c), child: Text(full ? 'Complet' : 'Réserver'));
+  }
+
+  Widget tile(Json c) {
     final taken = num2(c['taken']), spots = num2(c['spots']), mine = isTrue(c['mine']), full = taken >= spots && !mine;
-    final t = Theme.of(context).textTheme;
+    final ratio = spots == 0 ? 0.0 : (taken / spots).clamp(0.0, 1.0).toDouble();
+    final t = Theme.of(context).textTheme, cs = Theme.of(context).colorScheme;
+    final barColor = ratio >= 1 ? AppColors.danger : (ratio >= 0.8 ? AppColors.warning : cs.primary);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(children: [
-          Text('${c['time']}', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(width: 16),
+          Container(
+            width: 68,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: mine ? AppColors.amber : cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(children: [
+              Text('${c['time']}', style: t.titleMedium?.copyWith(color: mine ? AppColors.ink : cs.onSurface, fontWeight: FontWeight.w800)),
+              if (mine) const Text('Réservé', style: TextStyle(color: AppColors.ink, fontSize: 11, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${c['title']}', style: t.titleMedium),
-              Text('Coach : ${c['coach_name'] ?? '—'}', style: t.bodySmall),
-              const SizedBox(height: 6),
-              LinearProgressIndicator(value: spots == 0 ? 0 : (taken / spots).clamp(0.0, 1.0).toDouble(), minHeight: 6, borderRadius: BorderRadius.circular(3)),
-              Text('${taken.toInt()}/${spots.toInt()} places', style: t.bodySmall),
+              Text('Coach : ${c['coach_name'] ?? '—'}${c['coach_specialty'] == null ? '' : ' · ${c['coach_specialty']}'}', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: ratio, minHeight: 6, color: barColor, borderRadius: BorderRadius.circular(3)),
+              const SizedBox(height: 4),
+              Text('${taken.toInt()}/${spots.toInt()} places', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
             ]),
           ),
           const SizedBox(width: 12),
-          if (staff)
-            OutlinedButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ParticipantsPage(c))), child: const Text('Participants'))
-          else if (mine)
-            OutlinedButton(onPressed: () => book(c), child: const Text('Annuler'))
-          else
-            FilledButton(onPressed: full ? null : () => book(c), child: Text(full ? 'Complet' : 'Réserver')),
+          action(c, mine, full),
         ]),
+      ),
+    );
+  }
+
+  Widget dayChip(int i, int today) {
+    final n = classes.where((c) => c['day'] == i).length;
+    final selected = day == i;
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => setState(() => day = i),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 62,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.amber : cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: selected ? AppColors.amber : (i == today ? cs.primary : cs.outlineVariant), width: i == today && !selected ? 1.5 : 1),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(dayShort[i], style: TextStyle(fontWeight: FontWeight.w800, color: selected ? AppColors.ink : cs.onSurface)),
+            const SizedBox(height: 2),
+            Text(n == 0 ? '—' : '$n cours', style: TextStyle(fontSize: 11, color: selected ? AppColors.ink : cs.onSurfaceVariant)),
+          ]),
+        ),
       ),
     );
   }
@@ -80,59 +135,56 @@ class _PlanningPageState extends State<PlanningPage> {
     final list = classes.where((c) => c['day'] == day).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Planning'), actions: [
-        if (staff)
+        if (manage)
           IconButton(
             tooltip: 'Gérer les séances',
-            icon: const Icon(Icons.edit_calendar),
+            icon: const Icon(Icons.edit_calendar_rounded),
             onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => CrudPage(moduleById('classes'))));
               load();
             },
           ),
-        IconButton(onPressed: load, icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh_rounded)),
       ]),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Empty(Icons.wifi_off, error!, cta: 'Réessayer', onTap: load)
-              : Column(children: [
-                  SizedBox(
-                    height: 56,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      itemCount: 7,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (_, i) {
-                        final n = classes.where((c) => c['day'] == i).length;
-                        return ChoiceChip(label: Text('${dayShort[i]}${i == today ? " •" : ""}${n > 0 ? "  $n" : ""}'), selected: day == i, onSelected: (_) => setState(() => day = i));
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: load,
-                      child: list.isEmpty
-                          ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 60), Empty(Icons.event_busy, 'Aucune séance ce jour')])
-                          : ListView.builder(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(12, 0, 12, 16), itemCount: list.length, itemBuilder: (_, i) => tile(list[i])),
-                    ),
-                  ),
-                ]),
+      body: AsyncBody(
+        loading: loading,
+        error: error,
+        onRetry: load,
+        builder: () => Column(children: [
+          SizedBox(
+            height: 76,
+            child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), children: [for (var i = 0; i < 7; i++) dayChip(i, today)]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Align(alignment: Alignment.centerLeft, child: SectionHeader(dayLabel(day))),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: load,
+              child: list.isEmpty
+                  ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 40), Empty(Icons.event_busy_rounded, 'Aucun cours ce jour')])
+                  : ListView.builder(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), itemCount: list.length, itemBuilder: (_, i) => tile(list[i])),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }
 
-/// Liste des athlètes inscrits à une séance + pointage de présence (le jour même).
+/// Liste des membres inscrits à un cours + pointage de présence (le jour même).
 class ParticipantsPage extends StatefulWidget {
-  final Map<String, dynamic> cls;
+  final Json cls;
   const ParticipantsPage(this.cls, {super.key});
   @override
   State<ParticipantsPage> createState() => _ParticipantsPageState();
 }
 
 class _ParticipantsPageState extends State<ParticipantsPage> {
-  List<Map<String, dynamic>> list = [];
+  List<Json> list = [];
   bool loading = true;
+  String? error;
   bool get isToday => widget.cls['day'] == DateTime.now().weekday - 1;
 
   @override
@@ -142,51 +194,59 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
   }
 
   Future<void> load() async {
-    list = await safeList('classes/${widget.cls['id']}/participants');
+    try {
+      list = await PlanningService.participants(widget.cls['id'] as int);
+      error = null;
+    } catch (e) {
+      error = '$e';
+    }
     if (mounted) setState(() => loading = false);
   }
 
-  Future<void> mark(Map<String, dynamic> p) async {
-    try {
-      await Api.call('POST', 'classes/${widget.cls['id']}/present', {'member_id': p['id']});
-      await load();
-    } catch (e) {
-      snack(context, '$e');
-    }
+  Future<void> mark(Json p) async {
+    if (await attempt(context, () => PlanningService.markPresent(widget.cls['id'] as int, p['id'] as int))) await load();
   }
 
   @override
   Widget build(BuildContext context) {
     final present = list.where((p) => isTrue(p['present'])).length;
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: Text('${widget.cls['title']} · ${widget.cls['time']}')),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(children: [
-              Container(
-                width: double.infinity,
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                padding: const EdgeInsets.all(12),
-                child: Text(isToday ? '$present / ${list.length} présents aujourd\'hui' : 'Le pointage est possible uniquement le jour de la séance (${dayLabel(widget.cls['day'] as int)}).'),
-              ),
+      body: AsyncBody(
+        loading: loading,
+        error: error,
+        onRetry: load,
+        builder: () => ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: isToday ? cs.primaryContainer : cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              Icon(isToday ? Icons.how_to_reg_rounded : Icons.info_outline_rounded, color: isToday ? cs.onPrimaryContainer : cs.onSurfaceVariant),
+              const SizedBox(width: 10),
               Expanded(
-                child: list.isEmpty
-                    ? const Empty(Icons.people_outline, 'Aucune réservation pour cette séance')
-                    : ListView(padding: const EdgeInsets.all(12), children: [
-                        for (final p in list)
-                          Card(
-                            child: ListTile(
-                              leading: CircleAvatar(child: Text('${p['name']}'[0].toUpperCase())),
-                              title: Text('${p['name']}'),
-                              subtitle: Text('${p['phone'] ?? 'Pas de téléphone'}'),
-                              trailing: isTrue(p['present'])
-                                  ? const Chip(avatar: Icon(Icons.check_circle, color: Colors.green), label: Text('Présent'))
-                                  : FilledButton.tonal(onPressed: isToday ? () => mark(p) : null, child: const Text('Pointer')),
-                            ),
-                          ),
-                      ]),
+                child: Text(
+                  isToday ? '$present / ${list.length} présents aujourd\'hui' : 'Le pointage est possible uniquement le jour du cours (${dayLabel(widget.cls['day'] as int)}).',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: isToday ? cs.onPrimaryContainer : cs.onSurfaceVariant),
+                ),
               ),
             ]),
+          ),
+          const SizedBox(height: 8),
+          if (list.isEmpty) const Empty(Icons.people_outline_rounded, 'Aucune réservation pour ce cours'),
+          for (final p in list)
+            Card(
+              child: ListTile(
+                leading: InitialAvatar('${p['name']}'),
+                title: Text('${p['name']}'),
+                subtitle: Text('${p['phone'] ?? 'Pas de téléphone'}'),
+                trailing: isTrue(p['present'])
+                    ? const StatusPill('Présent', color: AppColors.success, icon: Icons.check_rounded)
+                    : FilledButton(onPressed: isToday ? () => mark(p) : null, child: const Text('Pointer')),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }

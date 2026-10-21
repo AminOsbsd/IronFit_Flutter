@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "C:/Users/Hazem/Desktop/IronFit_Flutter/app/windows"
+    "cmake.sourceDirectory": "${workspaceFolder}/app/windows",
+    "java.compile.nullAnalysis.mode": "automatic",
+    "python.terminal.useEnvFile": true
 }

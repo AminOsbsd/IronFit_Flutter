@@ -1,30 +1,49 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:ironfit/core/config/app_config.dart';
+import 'package:ironfit/core/network/api_client.dart';
+import 'package:ironfit/core/network/token_store.dart';
+import 'package:ironfit/core/theme/brand.dart';
 import 'package:ironfit/main.dart';
+import 'helpers.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  Future<void> openLogin(WidgetTester tester, {double width = 420}) async {
+    useScreen(tester, width: width);
+    SharedPreferences.setMockInitialValues({});
+    Api.store = MemoryTokenStore();
+    await Api.init();
+    await tester.pumpWidget(const IronFitApp());
+    await tester.pumpAndSettle();
+  }
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('l\'écran de connexion affiche le logo officiel et le formulaire', (tester) async {
+    await openLogin(tester);
+    expect(find.byType(BrandLogo), findsOneWidget);
+    final logo = tester.widget<Image>(find.descendant(of: find.byType(BrandLogo), matching: find.byType(Image)));
+    expect((logo.image as ResizeImage).imageProvider, isA<AssetImage>().having((a) => a.assetName, 'asset', AppConfig.logo));
+    expect(logo.fit, BoxFit.contain); // proportions conservées
+    expect(find.text('Connexion'), findsOneWidget);
+    expect(find.text('Se connecter'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('sur grand écran, le logo occupe un panneau dédié à côté du formulaire', (tester) async {
+    await openLogin(tester, width: 1300);
+    expect(find.byType(BrandLogo), findsOneWidget);
+    expect(find.text('Salle · Coaching · Suivi'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('le formulaire d\'inscription valide les champs avant d\'appeler le serveur', (tester) async {
+    await openLogin(tester);
+    await tester.tap(find.text('S\'inscrire'));
+    await tester.pumpAndSettle();
+    final submit = find.widgetWithText(FilledButton, 'S\'inscrire');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
     await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Obligatoire'), findsNWidgets(4));
   });
 }

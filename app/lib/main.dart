@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'services/api_service.dart';
+import 'core/network/api_client.dart';
+import 'core/theme/app_theme.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_shell.dart';
 
@@ -10,11 +11,6 @@ Future<void> main() async {
   runApp(const IronFitApp());
 }
 
-ThemeData _theme(Brightness b) => ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF5A1F), brightness: b),
-    );
-
 class IronFitApp extends StatelessWidget {
   const IronFitApp({super.key});
 
@@ -22,16 +18,17 @@ class IronFitApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: Api.authChanged,
-      builder: (_, __, ___) => MaterialApp(
+      builder: (_, _, _) => MaterialApp(
         title: 'IronFit',
         debugShowCheckedModeBanner: false,
         navigatorKey: Api.navKey,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
         locale: const Locale('fr'),
         supportedLocales: const [Locale('fr'), Locale('en')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: Api.me == null ? const AuthPage() : const HomeShell(),
+        home: Api.user == null ? const AuthPage() : const HomeShell(),
       ),
     );
   }

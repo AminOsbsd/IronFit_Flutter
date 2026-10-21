@@ -1,0 +1,18 @@
+# Données locales (ancienne base SQLite, clé JWT générée) et configuration : jamais versionnées
+backend/data/
+backend/.env
+.env
+
+# Maven / Spring Boot
+backend/target/
+*.log
+
+# Export SQL de migration (contient des données personnelles)
+ironfit-import.sql
+
+# Node (outil de migration uniquement)
+node_modules/
+
+# Divers
+.DS_Store
+Thumbs.db
