@@ -3,8 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ironfit/services/api_service.dart';
-import 'package:ironfit/services/token_store.dart';
+import 'package:ironfit/core/config/app_config.dart';
+import 'package:ironfit/core/network/api_client.dart';
+import 'package:ironfit/core/network/token_store.dart';
+import 'package:ironfit/services/auth_service.dart';
+import 'package:ironfit/services/planning_service.dart';
 import 'helpers.dart';
 
 void main() {
@@ -16,16 +19,31 @@ void main() {
     expect(Api.withQuery('plans', {}), 'plans');
   });
 
+  test('adresse de l\'API : port 8080 + /api, normalisation des saisies', () {
+    expect(AppConfig.defaultApiBase, endsWith(':8080/api'));
+    expect(AppConfig.normalizeBase('192.168.1.10:8080'), 'http://192.168.1.10:8080/api');
+    expect(AppConfig.normalizeBase('http://localhost:8080/api/'), 'http://localhost:8080/api');
+  });
+
+  test('une ancienne adresse (serveur Node sur :3000) est remplacée par celle du backend Spring Boot', () async {
+    SharedPreferences.setMockInitialValues({'base': 'http://127.0.0.1:3000'});
+    Api.store = MemoryTokenStore();
+    await Api.init();
+    expect(Api.base, AppConfig.defaultApiBase);
+  });
+
   test('le jeton est envoyé en en-tête Bearer et la session est restaurée au démarrage', () async {
     final log = <http.Request>[];
     SharedPreferences.setMockInitialValues({});
     Api.store = MemoryTokenStore('abc');
     Api.client = fakeServer({'GET me': athlete}, log: log);
     await Api.init();
-    expect(Api.me?['login'], 'youssef');
+    expect(Api.user?.login, 'youssef');
     expect(log.single.headers['Authorization'], 'Bearer abc');
+    expect(log.single.url.toString(), '${AppConfig.defaultApiBase}/me');
     expect(Api.isMember, isTrue);
     expect(Api.isCoach, isFalse);
+    expect(Api.user!.hasActiveSubscription, isTrue);
   });
 
   test('un ancien jeton stocké en clair est migré vers le stockage sécurisé', () async {
@@ -39,12 +57,13 @@ void main() {
   });
 
   test('le message d\'erreur du serveur est remonté ; un 401 déconnecte', () async {
-    await signedIn(athlete, {'POST book': http.Response.bytes(utf8.encode('{"error":"Séance complète"}'), 409)});
-    await expectLater(Api.call('POST', 'book', {'class_id': 1}), throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Séance complète')));
+    await signedIn(athlete, {'POST book': http.Response.bytes(utf8.encode('{"error":"Séance complète","status":409}'), 409)});
+    await expectLater(PlanningService.toggleBooking(1), throwsA(isA<ApiException>().having((e) => e.message, 'message', 'Séance complète')));
 
+    // corps illisible : le code 401 suffit pour déconnecter
     Api.client = MockClient((_) async => http.Response('{"error":"Session expirée"}', 401));
     await expectLater(Api.call('GET', 'me'), throwsA(isA<ApiException>()));
-    expect(Api.me, isNull);
+    expect(Api.user, isNull);
     expect(Api.token, isNull);
     expect(await Api.store.read(), isNull);
   });
@@ -68,8 +87,14 @@ void main() {
   });
 
   test('changer de mot de passe remplace le jeton stocké', () async {
-    await signedIn(athlete);
-    await Api.setToken('nouveau');
+    await signedIn(athlete, {'POST password': {'ok': true, 'token': 'nouveau'}});
+    await AuthService.changePassword('1234', 'abcdef');
     expect(await Api.store.read(), 'nouveau');
+    expect(Api.token, 'nouveau');
+  });
+
+  test('mot de passe oublié : le code de démonstration (dev_code) est renvoyé', () async {
+    await signedIn(athlete, {'POST forgot': {'ok': true, 'dev_code': '123456'}});
+    expect(await AuthService.forgotPassword('youssef@ironfit.local'), '123456');
   });
 }

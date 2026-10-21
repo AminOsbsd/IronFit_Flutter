@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../services/admin_service.dart';
+import '../services/catalog_service.dart';
+import '../services/planning_service.dart';
+import '../widgets/common_widgets.dart';
 
 const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const Map<Object, String> dayOptions = {0: 'Lundi', 1: 'Mardi', 2: 'Mercredi', 3: 'Jeudi', 4: 'Vendredi', 5: 'Samedi', 6: 'Dimanche'};
@@ -55,23 +60,15 @@ class Refs {
   static final Map<String, List<Map<String, dynamic>>> data = {};
 
   static Future<void> load() async {
-    Future<List<Map<String, dynamic>>> safe(String ep) async {
-      try {
-        return await Api.list(ep);
-      } catch (_) {
-        return <Map<String, dynamic>>[];
-      }
-    }
-
-    data['plans'] = await safe('plans');
-    data['coaches'] = await safe('coaches');
+    data['plans'] = await CrudService.safeList('plans');
+    data['coaches'] = await CrudService.safeList('coaches');
     // Admin : tous les membres ; coach : ses clients (filtré par le serveur)
-    data['members'] = Api.isAdmin || Api.isCoach ? await safe('members') : <Map<String, dynamic>>[];
+    data['members'] = Api.isAdmin || Api.isCoach ? await CrudService.safeList('members') : <Map<String, dynamic>>[];
   }
 
   static String name(String ref, dynamic id) {
     if (id == null) return '—';
-    if (ref == 'members' && Api.myId == id) return '${Api.me!['name']}';
+    if (ref == 'members' && Api.myId == id) return Api.user!.name;
     for (final r in data[ref] ?? <Map<String, dynamic>>[]) {
       if (r['id'] == id) return '${r['name']}';
     }
@@ -85,15 +82,16 @@ class Refs {
 
 Widget? bookAction(BuildContext c, Map<String, dynamic> x, Future<void> Function() reload) {
   if (!Api.isMember || Api.inCoachSpace) return null;
-  final mine = x['mine'] == 1 || x['mine'] == true;
+  final mine = isTrue(x['mine']);
   if (x['coach_id'] == Api.myId) return null; // il anime cette séance
   final full = ((x['taken'] ?? 0) as num) >= ((x['spots'] ?? 0) as num) && !mine;
-  return FilledButton.tonal(
+  return FilledButton(
+    style: mine ? FilledButton.styleFrom(backgroundColor: Theme.of(c).colorScheme.secondaryContainer, foregroundColor: Theme.of(c).colorScheme.onSecondaryContainer) : null,
     onPressed: full
         ? null
         : () async {
             try {
-              await Api.call('POST', 'book', {'class_id': x['id']});
+              await PlanningService.toggleBooking(x['id'] as int);
               await reload();
             } catch (e) {
               if (c.mounted) ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text('$e')));
@@ -105,12 +103,12 @@ Widget? bookAction(BuildContext c, Map<String, dynamic> x, Future<void> Function
 
 /// Activer / désactiver un compte (admin).
 List<RowMenu> accountMenu(Map<String, dynamic> u) => [
-      RowMenu(u['active'] == 0 ? 'Réactiver le compte' : 'Désactiver le compte', u['active'] == 0 ? Icons.lock_open : Icons.block, (c, u) async {
-        await Api.call('POST', 'members/${u['id']}/status', {'active': u['active'] == 0});
+      RowMenu(u['active'] == false ? 'Réactiver le compte' : 'Désactiver le compte', u['active'] == false ? Icons.lock_open : Icons.block, (c, u) async {
+        await AdminService.setAccountActive(u['id'] as int, u['active'] == false);
       }),
     ];
 
-Widget? disabledBadge(Map<String, dynamic> u) => u['active'] == 0 ? const Chip(label: Text('Désactivé'), visualDensity: VisualDensity.compact) : null;
+Widget? disabledBadge(Map<String, dynamic> u) => u['active'] == false ? const StatusPill('Désactivé', color: AppColors.danger, icon: Icons.block) : null;
 
 const _staff = ['admin', 'coach'];
 const _all = ['admin', 'coach', 'athlete'];
@@ -172,7 +170,7 @@ final List<Module> modules = [
       Field('duration', 'Durée (ex. 1 mois, 15 jours, 1 entrée)'),
       Field('descr', 'Description', type: FT.multiline),
     ],
-    titleOf: (m) => '${m['name']} — ${m['price']} DT',
+    titleOf: (m) => '${m['name']} — ${money(m['price'])}',
     subtitleOf: (m) => '${m['duration'] ?? ''} · ${m['descr'] ?? ''}',
   ),
   Module(
@@ -197,7 +195,7 @@ final List<Module> modules = [
       Field('paid_on', 'Date', type: FT.date, today: true),
       Field('note', 'Note'),
     ],
-    titleOf: (m) => '${m['amount']} DT · ${m['method'] ?? '—'}',
+    titleOf: (m) => '${money(m['amount'])} · ${m['method'] ?? '—'}',
     subtitleOf: (m) => '${m['member_name'] ?? '—'} · ${m['paid_on'] ?? '—'} · ${m['note'] ?? ''}',
   ),
   Module(
@@ -221,7 +219,7 @@ final List<Module> modules = [
       Field('price', 'Prix (DT)', type: FT.number, required: true),
       Field('stock', 'Stock', type: FT.number),
     ],
-    titleOf: (m) => '${m['name']} — ${m['price']} DT',
+    titleOf: (m) => '${m['name']} — ${money(m['price'])}',
     subtitleOf: (m) => '${m['category'] ?? '—'} · stock : ${m['stock'] ?? 0}',
   ),
   Module(

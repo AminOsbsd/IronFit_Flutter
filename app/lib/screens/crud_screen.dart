@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../services/catalog_service.dart';
 import '../models/module.dart';
 import '../widgets/common_widgets.dart';
 
@@ -24,7 +25,7 @@ class _CrudPageState extends State<CrudPage> {
   bool get canWrite => m.write.contains(Api.role);
   bool canEdit(Map<String, dynamic> x) => canWrite && (m.canEditRow?.call(x) ?? true);
 
-  String endpoint(int offset) => Api.withQuery(m.endpoint, {...?m.query?.call(), 'q': q.trim(), 'limit': pageSize, 'offset': offset});
+  Future<List<Map<String, dynamic>>> page(int offset) => CrudService.list(m.endpoint, {...?m.query?.call(), 'q': q.trim(), 'limit': pageSize, 'offset': offset});
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _CrudPageState extends State<CrudPage> {
     if (!silent) setState(() { loading = true; error = null; });
     try {
       await Refs.load();
-      final l = await Api.list(endpoint(0));
+      final l = await page(0);
       items = l;
       more = l.length == pageSize;
       error = null;
@@ -55,7 +56,7 @@ class _CrudPageState extends State<CrudPage> {
   Future<void> loadMore() async {
     setState(() => loadingMore = true);
     try {
-      final l = await Api.list(endpoint(items.length));
+      final l = await page(items.length);
       items = [...items, ...l];
       more = l.length == pageSize;
     } catch (e) {
@@ -81,7 +82,7 @@ class _CrudPageState extends State<CrudPage> {
   Future<void> remove(Map<String, dynamic> x) async {
     if (!await confirm(context, 'Supprimer ${m.singular} ?', body: m.titleOf(x), ok: 'Supprimer')) return;
     if (!mounted) return;
-    if (await attempt(context, () => Api.call('DELETE', '${m.endpoint}/${x['id']}'))) load(true);
+    if (await attempt(context, () => CrudService.delete(m.endpoint, x['id'] as Object))) load(true);
   }
 
   Widget tile(BuildContext c, Map<String, dynamic> x) {
@@ -91,6 +92,8 @@ class _CrudPageState extends State<CrudPage> {
     final badge = m.badge?.call(x);
     return Card(
       child: ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+        leading: IconBadge(m.icon),
         title: Text(m.titleOf(x)),
         subtitle: Text(m.subtitleOf(x)),
         onTap: editable ? () => edit(x) : null,
@@ -259,7 +262,7 @@ class _FormSheetState extends State<FormSheet> {
       body[f.key] = x;
     }
     try {
-      await Api.call(item == null ? 'POST' : 'PUT', item == null ? m.endpoint : '${m.endpoint}/${item!['id']}', body);
+      item == null ? await CrudService.create(m.endpoint, body) : await CrudService.update(m.endpoint, item!['id'] as Object, body);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) setState(() { err = '$e'; busy = false; });

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../services/admin_service.dart';
+import '../services/notification_service.dart';
+import '../services/planning_service.dart';
 import '../widgets/common_widgets.dart';
 import '../models/module.dart';
 import 'notifications_screen.dart';
@@ -29,11 +33,11 @@ class _AdminHomeState extends State<AdminHome> {
   Future<void> load() async {
     try {
       await Api.refreshMe();
-      st = await Api.get('stats');
+      st = await AdminService.stats();
       await Refs.load();
       final dow = DateTime.now().weekday - 1;
-      today = (await Api.list('classes')).where((c) => c['day'] == dow).toList();
-      Api.refreshUnread();
+      today = (await PlanningService.classes()).where((c) => c['day'] == dow).toList();
+      NotificationService.refreshUnread();
       error = null;
     } catch (e) {
       error = '$e';
@@ -57,7 +61,7 @@ class _AdminHomeState extends State<AdminHome> {
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             DropdownButton<Object?>(
               value: plan, isExpanded: true,
-              items: [for (final p in plans) DropdownMenuItem<Object?>(value: p['id'], child: Text('${p['name']} — ${p['price']} DT'))],
+              items: [for (final p in plans) DropdownMenuItem<Object?>(value: p['id'], child: Text('${p['name']} — ${money(p['price'])}'))],
               onChanged: (x) => set(() => plan = x),
             ),
             DropdownButton<String>(value: method, isExpanded: true, items: [for (final e in payMethods) DropdownMenuItem(value: e, child: Text(e))], onChanged: (x) => set(() => method = x!)),
@@ -70,11 +74,11 @@ class _AdminHomeState extends State<AdminHome> {
       ),
     );
     if (ok != true || !mounted) return;
-    if (await attempt(context, () => Api.call('POST', 'members/${a['id']}/renew', {'plan_id': plan, 'method': method}), success: 'Abonnement renouvelé, paiement enregistré ✓')) load();
+    if (await attempt(context, () => AdminService.renew(a['id'] as int, planId: plan, method: method), success: 'Abonnement renouvelé, paiement enregistré ✓')) load();
   }
 
   Widget alert(IconData i, String text, Color c, {VoidCallback? onTap}) => Card(
-        child: ListTile(leading: Icon(i, color: c), title: Text(text), trailing: onTap == null ? null : const Icon(Icons.chevron_right), onTap: onTap),
+        child: ListTile(leading: IconBadge(i, color: c), title: Text(text), trailing: onTap == null ? null : const Icon(Icons.chevron_right_rounded), onTap: onTap),
       );
 
   Future<void> open(Widget page) async {
@@ -85,22 +89,22 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final me = Api.me!;
-    final expiring = L('expiring'), lapsed = L('lapsed'), low = L('lowStock'), maint = L('maintenance'), rev = L('revenue'), fill = L('fill');
-    final pending = (st['pending'] ?? 0) as int, pendingCoach = (st['pendingCoachings'] ?? 0) as int;
+    final me = Api.user!;
+    final expiring = L('expiring'), lapsed = L('lapsed'), low = L('low_stock'), maint = L('maintenance'), rev = L('revenue'), fill = L('fill');
+    final pending = (st['pending'] ?? 0) as int, pendingCoach = (st['pending_coachings'] ?? 0) as int;
     final month = todayIso().substring(0, 7);
     final monthRev = rev.where((r) => r['m'] == month).fold<double>(0, (s, r) => s + num2(r['total']));
     final alerts = <Widget>[
       if (pending > 0) alert(Icons.assignment_ind, '$pending demande${pending > 1 ? "s" : ""} d\'abonnement à valider', cs.primary, onTap: () => open(const RequestsPage())),
-      if (pendingCoach > 0) alert(Icons.sports, '$pendingCoach demande${pendingCoach > 1 ? "s" : ""} de coaching en attente de réponse du coach', Colors.blueGrey, onTap: () => open(const CoachingAdminPage())),
-      if (expiring.isNotEmpty) alert(Icons.timer, '${expiring.length} abonnement${expiring.length > 1 ? "s" : ""} expire${expiring.length > 1 ? "nt" : ""} cette semaine', Colors.orange),
-      if (low.isNotEmpty) alert(Icons.inventory_2, 'Stock bas : ${low.map((p) => "${p['name']} (${p['stock']})").join(", ")}', Colors.red),
-      if (maint.isNotEmpty) alert(Icons.build, 'Matériel à vérifier : ${maint.map((e) => e['name']).join(", ")}', Colors.orange),
+      if (pendingCoach > 0) alert(Icons.sports, '$pendingCoach demande${pendingCoach > 1 ? "s" : ""} de coaching en attente de réponse du coach', AppColors.info, onTap: () => open(const CoachingAdminPage())),
+      if (expiring.isNotEmpty) alert(Icons.timer, '${expiring.length} abonnement${expiring.length > 1 ? "s" : ""} expire${expiring.length > 1 ? "nt" : ""} cette semaine', AppColors.warning),
+      if (low.isNotEmpty) alert(Icons.inventory_2, 'Stock bas : ${low.map((p) => "${p['name']} (${p['stock']})").join(", ")}', AppColors.danger),
+      if (maint.isNotEmpty) alert(Icons.build, 'Matériel à vérifier : ${maint.map((e) => e['name']).join(", ")}', AppColors.warning),
     ];
     final renewList = [...expiring, ...lapsed];
     return Scaffold(
       appBar: AppBar(
-        title: Text('Administration · ${'${me['name']}'.split(' ').first}'),
+        title: Text('Administration · ${me.firstName}'),
         actions: [NotificationBell(page: () => const NotificationsPage()), IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh))],
       ),
       body: AsyncBody(
@@ -112,16 +116,16 @@ class _AdminHomeState extends State<AdminHome> {
           child: ListView(padding: const EdgeInsets.all(12), children: [
             kpiGrid([
                 kpiCard(context, Icons.groups, 'Membres', '${st['athletes'] ?? 0}'),
-                kpiCard(context, Icons.verified, 'Abonnements actifs', '${st['active'] ?? 0}', color: Colors.green),
-                kpiCard(context, Icons.warning_amber, 'Membres sans abonnement', '${st['expired'] ?? 0}', color: Colors.orange),
+                kpiCard(context, Icons.verified, 'Abonnements actifs', '${st['active'] ?? 0}', color: AppColors.success),
+                kpiCard(context, Icons.warning_amber, 'Membres sans abonnement', '${st['expired'] ?? 0}', color: AppColors.warning),
                 kpiCard(context, Icons.payments, 'Revenus du mois', '${monthRev.toStringAsFixed(0)} DT'),
                 kpiCard(context, Icons.sports, 'Coachs · suivis actifs', '${st['coaches'] ?? 0} · ${st['coachings'] ?? 0}'),
-                kpiCard(context, Icons.local_fire_department, 'Séances enregistrées (7 j)', '${st['workouts7d'] ?? 0}'),
-                kpiCard(context, Icons.how_to_reg, 'Présences aujourd\'hui', '${st['checkinsToday'] ?? 0}'),
-                kpiCard(context, Icons.block, 'Comptes désactivés', '${st['disabled'] ?? 0}', color: Colors.red),
+                kpiCard(context, Icons.local_fire_department, 'Séances enregistrées (7 j)', '${st['workouts_7d'] ?? 0}', color: AppColors.ember),
+                kpiCard(context, Icons.how_to_reg, 'Présences aujourd\'hui', '${st['checkins_today'] ?? 0}', color: AppColors.info),
+                kpiCard(context, Icons.block, 'Comptes désactivés', '${st['disabled'] ?? 0}', color: AppColors.danger),
               ]),
             sectionTitle(context, 'À surveiller'),
-            if (alerts.isEmpty) alert(Icons.check_circle, 'Tout est en ordre ✅', Colors.green) else ...alerts,
+            if (alerts.isEmpty) alert(Icons.check_circle_rounded, 'Tout est en ordre ✅', AppColors.success) else ...alerts,
             if (rev.isNotEmpty) ...[
               sectionTitle(context, 'Revenus par mois (DT)'),
               Card(
@@ -139,7 +143,7 @@ class _AdminHomeState extends State<AdminHome> {
             for (final c in today)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.schedule),
+                  leading: const IconBadge(Icons.schedule_rounded),
                   title: Text('${c['time']} · ${c['title']}'),
                   subtitle: Text('${c['coach_name'] ?? '—'} · ${c['taken']}/${c['spots']} inscrits'),
                   trailing: OutlinedButton(onPressed: () => open(ParticipantsPage(c)), child: const Text('Pointer')),
@@ -150,7 +154,7 @@ class _AdminHomeState extends State<AdminHome> {
               for (final a in renewList)
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.person),
+                    leading: InitialAvatar('${a['name']}'),
                     title: Text('${a['name']}'),
                     subtitle: Text('${'${a['sub_end']}'.compareTo(todayIso()) < 0 ? "Expiré" : "Expire"} le ${a['sub_end']}'),
                     trailing: FilledButton.tonal(onPressed: () => renew(a), child: const Text('Renouveler')),
@@ -204,7 +208,7 @@ class _RequestsPageState extends State<RequestsPage> {
 
   Future<void> load() async {
     try {
-      list = await Api.list('requests');
+      list = await AdminService.pendingRequests();
       error = null;
     } catch (e) {
       error = '$e';
@@ -213,14 +217,14 @@ class _RequestsPageState extends State<RequestsPage> {
   }
 
   Future<void> approve(Map<String, dynamic> r) async {
-    final method = await pickMethod(context, 'Paiement reçu de ${r['member_name']} (${r['price']} DT)');
+    final method = await pickMethod(context, 'Paiement reçu de ${r['member_name']} (${money(r['price'])})');
     if (method == null || !mounted) return;
-    if (await attempt(context, () => Api.call('POST', 'requests/${r['id']}/approve', {'method': method}), success: 'Abonnement activé, paiement enregistré ✓')) load();
+    if (await attempt(context, () => AdminService.approveRequest(r['id'] as int, method), success: 'Abonnement activé, paiement enregistré ✓')) load();
   }
 
   Future<void> reject(Map<String, dynamic> r) async {
     if (!await confirm(context, 'Refuser la demande de ${r['member_name']} ?', ok: 'Refuser')) return;
-    if (mounted && await attempt(context, () => Api.call('POST', 'requests/${r['id']}/reject'))) load();
+    if (mounted && await attempt(context, () => AdminService.rejectRequest(r['id'] as int))) load();
   }
 
   @override
@@ -239,7 +243,7 @@ class _RequestsPageState extends State<RequestsPage> {
                         padding: const EdgeInsets.all(14),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('${r['member_name']}', style: Theme.of(context).textTheme.titleMedium),
-                          Text('${r['plan_name']} — ${r['price']} DT · demandé le ${'${r['created']}'.split(' ').first}'),
+                          Text('${r['plan_name']} — ${money(r['price'])} · demandé le ${dateOnly(r['created'])}'),
                           const SizedBox(height: 8),
                           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                             TextButton(onPressed: () => reject(r), child: const Text('Refuser')),
@@ -276,7 +280,7 @@ class _CoachingAdminPageState extends State<CoachingAdminPage> {
 
   Future<void> load() async {
     try {
-      list = await Api.list(Api.withQuery('coaching', {'status': status}));
+      list = await AdminService.coachingLinks(status: status);
       error = null;
     } catch (e) {
       error = '$e';
@@ -314,12 +318,12 @@ class _CoachingAdminPageState extends State<CoachingAdminPage> {
       ),
     );
     if (ok != true || !mounted) return;
-    if (await attempt(context, () => Api.call('POST', 'coaching/assign', {'coach_id': coach, 'client_id': client}), success: 'Coach attribué ✓')) load();
+    if (await attempt(context, () => AdminService.assignCoach(coach, client), success: 'Coach attribué ✓')) load();
   }
 
   Future<void> end(Map<String, dynamic> l) async {
     if (!await confirm(context, 'Mettre fin au suivi ?', body: '${l['coach_name']} → ${l['client_name']}', ok: 'Terminer')) return;
-    if (mounted && await attempt(context, () => Api.call('POST', 'coaching/${l['id']}/end'))) load();
+    if (mounted && await attempt(context, () => AdminService.endCoaching(l['id'] as int))) load();
   }
 
   @override
@@ -345,9 +349,9 @@ class _CoachingAdminPageState extends State<CoachingAdminPage> {
                       for (final l in list)
                         Card(
                           child: ListTile(
-                            leading: Icon(switch (l['status']) { 'active' => Icons.verified, 'pending' => Icons.hourglass_top, _ => Icons.history }),
+                            leading: IconBadge(switch (l['status']) { 'active' => Icons.verified_rounded, 'pending' => Icons.hourglass_top_rounded, _ => Icons.history_rounded }, color: switch (l['status']) { 'active' => AppColors.success, 'pending' => AppColors.info, _ => null }),
                             title: Text('${l['coach_name']} → ${l['client_name']}'),
-                            subtitle: Text('${statuses[l['status']] ?? l['status']} · depuis le ${'${l['updated']}'.split(' ').first}'),
+                            subtitle: Text('${statuses[l['status']] ?? l['status']} · depuis le ${dateOnly(l['updated'])}'),
                             trailing: l['status'] == 'active' || l['status'] == 'pending' ? TextButton(onPressed: () => end(l), child: const Text('Terminer')) : null,
                           ),
                         ),

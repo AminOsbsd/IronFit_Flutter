@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ironfit/core/network/api_client.dart';
+import 'package:ironfit/core/theme/brand.dart';
 import 'package:ironfit/main.dart';
 import 'package:ironfit/models/module.dart';
-import 'package:ironfit/services/api_service.dart';
 import 'helpers.dart';
 
 void main() {
-  Future<void> open(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+  Future<void> open(WidgetTester tester, {double width = 420, double height = 900}) async {
+    useScreen(tester, width: width, height: height);
     await tester.pumpWidget(const IronFitApp());
     await tester.pumpAndSettle();
   }
 
-  NavigationBar navBar(WidgetTester tester) => tester.widget<NavigationBar>(find.byType(NavigationBar));
-  List<String> tabs(WidgetTester tester) => navBar(tester).destinations.map((d) => (d as NavigationDestination).label).toList();
+  List<String> tabs(WidgetTester tester) =>
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).destinations.map((d) => (d as NavigationDestination).label).toList();
 
   testWidgets('un membre voit l\'espace membre, sans administration ni bascule coach', (tester) async {
     await signedIn(athlete);
@@ -23,7 +22,9 @@ void main() {
     expect(tabs(tester), ['Accueil', 'Planning', 'Explorer', 'Mon espace', 'Profil']);
     expect(find.text('Espace coach'), findsNothing);
     expect(find.text('Bonjour, Youssef 👋'), findsOneWidget);
+    expect(find.text('CARTE MEMBRE'), findsOneWidget);
     expect(find.byType(Badge), findsOneWidget); // cloche des notifications (2 non lues)
+    expect(find.byType(BrandBackdrop), findsWidgets); // filigrane du logo derrière la page
   });
 
   testWidgets('l\'administrateur a une interface d\'administration dédiée', (tester) async {
@@ -40,19 +41,20 @@ void main() {
   testWidgets('un coach bascule entre son entraînement et son espace coach', (tester) async {
     await signedIn(coach, {
       'GET coaching/clients': [
-        {'id': 9, 'coach_id': 2, 'client_id': 5, 'status': 'pending', 'client_name': 'Amira Jlassi', 'client_login': 'amira', 'created': '2026-10-01 10:00:00'},
+        {'id': 9, 'coach_id': 2, 'client_id': 5, 'status': 'pending', 'client_name': 'Amira Jlassi', 'client_login': 'amira', 'created': '2026-10-01T10:00:00Z'},
       ],
     });
     await open(tester);
     // Par défaut : son entraînement personnel (il est aussi membre)
     expect(tabs(tester), ['Accueil', 'Planning', 'Explorer', 'Mon espace', 'Profil']);
-    expect(find.text('IRONFIT · CARTE MEMBRE · COACH'), findsOneWidget);
+    expect(find.text('CARTE MEMBRE · COACH'), findsOneWidget);
 
     await tester.tap(find.text('Espace coach'));
     await tester.pumpAndSettle();
     expect(tabs(tester), ['Accueil', 'Planning', 'Clients', 'Gestion', 'Profil']);
     expect(find.text('Demandes de suivi'), findsOneWidget);
     expect(find.text('Amira Jlassi'), findsOneWidget);
+    expect(find.textContaining('2026-10-01'), findsOneWidget); // date ISO du serveur affichée sans l'heure
     expect(Api.prefs.getString('workspace'), 'coach');
 
     // Gestion : uniquement les modules qu'un coach peut modifier
@@ -65,6 +67,16 @@ void main() {
     await tester.tap(find.text('Mon entraînement'));
     await tester.pumpAndSettle();
     expect(tabs(tester), contains('Mon espace'));
+  });
+
+  testWidgets('grand écran : rail latéral avec le logo et bascule coach verticale', (tester) async {
+    await signedIn(coach);
+    await open(tester, width: 1300, height: 900);
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(BrandLogo), findsOneWidget);
+    expect(find.byTooltip('Espace coach'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   group('règles d\'interface des modules', () {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../services/program_service.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/form_dialog.dart';
 
@@ -33,7 +35,7 @@ Future<bool> logWorkout(BuildContext context, {int? programId, String? title}) a
       DField('rpe', 'Difficulté ressentie', type: DType.slider, min: 1, max: 10, initial: 6),
       DField('notes', 'Comment ça s\'est passé ?', type: DType.multiline),
     ],
-    submit: (v) => Api.call('POST', 'workouts', {...v, 'program_id': programId}),
+    submit: (v) => ProgramService.logWorkout(v, programId: programId),
   );
   return r != null;
 }
@@ -67,7 +69,7 @@ class _ProgramListState extends State<ProgramList> {
 
   Future<void> load() async {
     try {
-      list = await Api.list(Api.withQuery('programs', {'scope': widget.scope, 'client_id': widget.clientId}));
+      list = await ProgramService.programs(scope: widget.scope, clientId: widget.clientId);
       error = null;
     } catch (e) {
       error = '$e';
@@ -78,8 +80,7 @@ class _ProgramListState extends State<ProgramList> {
   Future<void> create() async {
     int? id;
     await formDialog(context, widget.clientId == null ? 'Nouveau programme personnel' : 'Nouveau programme pour ce client', _programFields(), ok: 'Créer', submit: (v) async {
-      final r = await Api.call('POST', 'programs', {...v, 'client_id': widget.clientId});
-      id = (r as Map)['id'] as int;
+      id = await ProgramService.create(v, clientId: widget.clientId);
     });
     if (id != null && mounted) await open(id!);
   }
@@ -102,8 +103,8 @@ class _ProgramListState extends State<ProgramList> {
             for (final p in list)
               Card(
                 child: ListTile(
-                  leading: CircleAvatar(child: Icon(p['coach_id'] == null ? Icons.person : Icons.sports)),
-                  title: Text('${p['title']}', style: TextStyle(decoration: p['active'] == 0 ? TextDecoration.lineThrough : null)),
+                  leading: IconBadge(p['coach_id'] == null ? Icons.person_rounded : Icons.sports_rounded),
+                  title: Text('${p['title']}', style: TextStyle(decoration: isTrue(p['active']) ? null : TextDecoration.lineThrough)),
                   subtitle: Text([
                     if (widget.scope == 'personal') p['coach_id'] == null ? 'Programme personnel' : 'Par ${p['coach_name'] ?? 'un coach'}',
                     if (p['goal'] != null) '${p['goal']}',
@@ -153,7 +154,7 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
 
   Future<void> load() async {
     try {
-      p = await Api.get('programs/${widget.id}');
+      p = await ProgramService.program(widget.id);
       error = null;
     } catch (e) {
       error = '$e';
@@ -162,33 +163,33 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
   }
 
   Future<void> editProgram() async {
-    final r = await formDialog(context, 'Modifier le programme', _programFields(p), submit: (v) => Api.call('PUT', 'programs/${widget.id}', {...v, 'active': p['active']}));
+    final r = await formDialog(context, 'Modifier le programme', _programFields(p), submit: (v) => ProgramService.update(widget.id, {...v, 'active': p['active']}));
     if (r != null) load();
   }
 
   Future<void> toggleActive() async {
-    if (await attempt(context, () => Api.call('PUT', 'programs/${widget.id}', {'title': p['title'], 'goal': p['goal'], 'notes': p['notes'], 'active': p['active'] == 1 ? 0 : 1}))) load();
+    if (await attempt(context, () => ProgramService.update(widget.id, {'title': p['title'], 'goal': p['goal'], 'notes': p['notes'], 'active': !isTrue(p['active'])}))) load();
   }
 
   Future<void> deleteProgram() async {
     if (!await confirm(context, 'Supprimer « ${p['title']} » ?', body: 'Les exercices seront supprimés. Les séances déjà réalisées restent dans l\'historique.', ok: 'Supprimer')) return;
     if (!mounted) return;
-    if (await attempt(context, () => Api.call('DELETE', 'programs/${widget.id}')) && mounted) Navigator.pop(context);
+    if (await attempt(context, () => ProgramService.delete(widget.id)) && mounted) Navigator.pop(context);
   }
 
   Future<void> exercise([Map<String, dynamic>? e]) async {
     final r = await formDialog(context, e == null ? 'Ajouter un exercice' : 'Modifier l\'exercice', _exerciseFields(e),
-        submit: (v) => e == null ? Api.call('POST', 'programs/${widget.id}/exercises', v) : Api.call('PUT', 'exercises/${e['id']}', {...v, 'position': e['position']}));
+        submit: (v) => e == null ? ProgramService.addExercise(widget.id, v) : ProgramService.updateExercise(e['id'] as int, {...v, 'position': e['position']}));
     if (r != null) load();
   }
 
   Future<void> deleteExercise(Map<String, dynamic> e) async {
-    if (await attempt(context, () => Api.call('DELETE', 'exercises/${e['id']}'))) load();
+    if (await attempt(context, () => ProgramService.deleteExercise(e['id'] as int))) load();
   }
 
   Future<void> comment(Map<String, dynamic> w) async {
     final r = await formDialog(context, 'Commentaire pour votre client', [DField('comment', 'Retour, conseils…', type: DType.multiline, initial: w['coach_comment'])],
-        ok: 'Envoyer', submit: (v) => Api.call('POST', 'workouts/${w['id']}/feedback', v));
+        ok: 'Envoyer', submit: (v) => ProgramService.comment(w['id'] as int, v['comment'] as String?));
     if (r != null) load();
   }
 
@@ -208,7 +209,7 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
               onSelected: (v) => switch (v) { 'e' => editProgram(), 'a' => toggleActive(), _ => deleteProgram() },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'e', child: Text('Modifier')),
-                PopupMenuItem(value: 'a', child: Text(p['active'] == 1 ? 'Archiver' : 'Réactiver')),
+                PopupMenuItem(value: 'a', child: Text(isTrue(p['active']) ? 'Archiver' : 'Réactiver')),
                 const PopupMenuItem(value: 'd', child: Text('Supprimer')),
               ],
             ),
@@ -235,12 +236,12 @@ class _ProgramDetailPageState extends State<ProgramDetailPage> {
           child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 88), children: [
             Card(
               child: ListTile(
-                leading: Icon(p['coach_id'] == null ? Icons.person : Icons.sports),
+                leading: IconBadge(p['coach_id'] == null ? Icons.person_rounded : Icons.sports_rounded),
                 title: Text(p['coach_id'] == null ? 'Programme personnel' : 'Coach : ${p['coach_name'] ?? '—'}'),
                 subtitle: Text([
                   if (!isTrue(p['can_log'])) 'Client : ${p['client_name']}',
                   if (p['goal'] != null) 'Objectif : ${p['goal']}',
-                  if (p['active'] == 0) 'Archivé',
+                  if (!isTrue(p['active'])) 'Archivé',
                   if (p['notes'] != null) '${p['notes']}',
                 ].join('\n')),
               ),
@@ -285,7 +286,7 @@ class WorkoutCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Icon(Icons.check_circle, color: Colors.green),
+            const Icon(Icons.check_circle_rounded, color: AppColors.success),
             const SizedBox(width: 8),
             Expanded(child: Text('${w['done_on']}${w['program_title'] == null ? '' : ' · ${w['program_title']}'}', style: const TextStyle(fontWeight: FontWeight.w600))),
             if (onDelete != null) IconButton(tooltip: 'Supprimer', icon: const Icon(Icons.delete_outline), onPressed: onDelete),
@@ -333,7 +334,7 @@ class WorkoutListState extends State<WorkoutList> {
 
   Future<void> load() async {
     try {
-      list = await Api.list(Api.withQuery('workouts', {'user_id': widget.userId, 'limit': 100}));
+      list = await ProgramService.workouts(userId: widget.userId);
       error = null;
     } catch (e) {
       error = '$e';
@@ -343,13 +344,13 @@ class WorkoutListState extends State<WorkoutList> {
 
   Future<void> comment(Map<String, dynamic> w) async {
     final r = await formDialog(context, 'Commentaire', [DField('comment', 'Retour, conseils…', type: DType.multiline, initial: w['coach_comment'])],
-        ok: 'Envoyer', submit: (v) => Api.call('POST', 'workouts/${w['id']}/feedback', v));
+        ok: 'Envoyer', submit: (v) => ProgramService.comment(w['id'] as int, v['comment'] as String?));
     if (r != null) load();
   }
 
   Future<void> remove(Map<String, dynamic> w) async {
     if (!await confirm(context, 'Supprimer cette séance ?', ok: 'Supprimer')) return;
-    if (mounted && await attempt(context, () => Api.call('DELETE', 'workouts/${w['id']}'))) load();
+    if (mounted && await attempt(context, () => ProgramService.deleteWorkout(w['id'] as int))) load();
   }
 
   @override

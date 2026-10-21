@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../models/module.dart';
+import '../services/catalog_service.dart';
+import '../services/user_service.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/form_dialog.dart';
-import '../models/module.dart';
 import 'coaches_screen.dart';
 import 'crud_screen.dart';
 import 'notifications_screen.dart';
@@ -21,7 +24,7 @@ class MemberHome extends StatefulWidget {
 class _MemberHomeState extends State<MemberHome> {
   bool loading = true;
   String? error;
-  List<Map<String, dynamic>> classes = [], ann = [], promos = [], reqs = [], measures = [], programs = [], workouts = [];
+  List<Json> classes = [], ann = [], promos = [], reqs = [], measures = [], programs = [], workouts = [];
 
   @override
   void initState() {
@@ -39,53 +42,45 @@ class _MemberHomeState extends State<MemberHome> {
       return;
     }
     await Refs.load();
+    final me = Api.myId!;
     final r = await Future.wait([
-      safeList('classes'), safeList('announcements'), safeList('promos'), safeList('requests'), safeList('measures'),
-      safeList('programs?scope=personal'), safeList('workouts?limit=50'),
+      CrudService.safeList('classes'), CrudService.safeList('announcements'), CrudService.safeList('promos'), CrudService.safeList('requests'),
+      CrudService.safeList('measures?member_id=$me'), CrudService.safeList('programs?scope=personal'), CrudService.safeList('workouts?limit=50'),
     ]);
     classes = r[0]; ann = r[1]; promos = r[2]; reqs = r[3]; measures = r[4]; programs = r[5]; workouts = r[6];
-    Api.refreshUnread();
     if (mounted) setState(() => loading = false);
   }
 
   Future<void> cancelRequest(int id) async {
-    if (await attempt(context, () => Api.call('POST', 'requests/$id/cancel'))) load();
+    if (await attempt(context, () => UserService.cancelRequest(id))) load();
   }
 
   Widget memberCard() {
-    final me = Api.me!, end = me['sub_end'] as String?, cs = Theme.of(context).colorScheme;
-    final active = end != null && end.compareTo(todayIso()) >= 0;
+    final me = Api.user!, end = me.subEnd;
+    final active = me.hasActiveSubscription;
     final left = end == null ? 0 : DateTime.parse(end).difference(DateTime.now()).inDays + 1;
     final status = end == null ? 'Aucun abonnement' : (active ? 'Actif · $left jour${left > 1 ? "s" : ""} restant${left > 1 ? "s" : ""}' : 'Expiré le $end');
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(colors: [cs.primary, cs.tertiary], begin: Alignment.topLeft, end: Alignment.bottomRight),
-      ),
+    return HeroCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Icon(Icons.fitness_center, color: Colors.white),
+          const Icon(Icons.credit_card_rounded, color: AppColors.amber, size: 20),
           const SizedBox(width: 8),
-          Text(Api.isCoach ? 'IRONFIT · CARTE MEMBRE · COACH' : 'IRONFIT · CARTE MEMBRE', style: const TextStyle(color: Colors.white70, letterSpacing: 1.2, fontSize: 12)),
+          Text(me.isCoach ? 'CARTE MEMBRE · COACH' : 'CARTE MEMBRE', style: const TextStyle(color: Colors.white70, letterSpacing: 1.6, fontSize: 12, fontWeight: FontWeight.w700)),
         ]),
         const SizedBox(height: 18),
-        Text('${me['name']}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-        Text('N° ${'${me['id']}'.padLeft(4, '0')} · ${me['plan_id'] == null ? '—' : Refs.name('plans', me['plan_id'])}', style: const TextStyle(color: Colors.white)),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(20)),
-          child: Text(status, style: const TextStyle(color: Colors.white, fontSize: 12)),
-        ),
+        Text(me.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text('N° ${'${me.id}'.padLeft(4, '0')} · ${me.planId == null ? 'Sans formule' : Refs.name('plans', me.planId)}', style: const TextStyle(color: Colors.white70)),
+        const SizedBox(height: 14),
+        StatusPill(status, color: active ? AppColors.amber : const Color(0xFFFF8A80), icon: active ? Icons.verified_rounded : Icons.error_outline),
       ]),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final me = Api.me!, end = me['sub_end'] as String?, today = todayIso();
-    final active = end != null && end.compareTo(today) >= 0;
+    final me = Api.user!;
+    final active = me.hasActiveSubscription;
     final pending = reqs.where((r) => r['status'] == 'pending').toList();
     final dow = DateTime.now().weekday - 1;
     final mine = classes.where((c) => isTrue(c['mine'])).toList()
@@ -97,12 +92,14 @@ class _MemberHomeState extends State<MemberHome> {
     final week = workouts.where((w) => (DateTime.tryParse('${w['done_on']}') ?? DateTime(2000)).isAfter(ago7)).length;
     final sorted = [...measures]..sort((a, b) => '${b['measured_on']}'.compareTo('${a['measured_on']}'));
     final weight = sorted.where((m) => m['weight'] != null).isEmpty ? '—' : '${sorted.firstWhere((m) => m['weight'] != null)['weight']} kg';
+    final today = todayIso();
     final offers = promos.where((p) => p['until'] == null || '${p['until']}'.compareTo(today) >= 0).toList();
-    final activePrograms = programs.where((p) => p['active'] == 1).toList();
+    final activePrograms = programs.where((p) => isTrue(p['active'])).toList();
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Bonjour, ${'${me['name']}'.split(' ').first} 👋'),
-        actions: [NotificationBell(page: () => const NotificationsPage()), IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh))],
+        title: Text('Bonjour, ${me.firstName} 👋'),
+        actions: [NotificationBell(page: () => const NotificationsPage()), IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh_rounded))],
       ),
       body: AsyncBody(
         loading: loading,
@@ -110,13 +107,13 @@ class _MemberHomeState extends State<MemberHome> {
         onRetry: load,
         builder: () => RefreshIndicator(
           onRefresh: load,
-          child: ListView(padding: const EdgeInsets.all(12), children: [
+          child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             memberCard(),
             if (pending.isNotEmpty)
               Card(
-                margin: const EdgeInsets.only(top: 10),
+                margin: const EdgeInsets.only(top: 12),
                 child: ListTile(
-                  leading: const Icon(Icons.hourglass_top),
+                  leading: const IconBadge(Icons.hourglass_top_rounded, color: AppColors.info),
                   title: Text('Demande en attente : ${pending.first['plan_name']}'),
                   subtitle: const Text('Réglez à l\'accueil : l\'abonnement sera activé par l\'administrateur.'),
                   trailing: TextButton(onPressed: () => cancelRequest(pending.first['id'] as int), child: const Text('Annuler')),
@@ -124,61 +121,73 @@ class _MemberHomeState extends State<MemberHome> {
               )
             else if (!active)
               Card(
-                margin: const EdgeInsets.only(top: 10),
-                color: Theme.of(context).colorScheme.tertiaryContainer,
+                margin: const EdgeInsets.only(top: 12),
+                color: cs.primaryContainer,
                 child: ListTile(
-                  leading: const Icon(Icons.card_membership),
-                  title: Text(end == null ? 'Pas encore d\'abonnement' : 'Votre abonnement a expiré'),
-                  subtitle: const Text('Choisissez une formule pour réserver vos séances.'),
+                  leading: const IconBadge(Icons.card_membership_rounded),
+                  title: Text(me.subEnd == null ? 'Pas encore d\'abonnement' : 'Votre abonnement a expiré', style: TextStyle(color: cs.onPrimaryContainer)),
+                  subtitle: Text('Choisissez une formule pour réserver vos cours.', style: TextStyle(color: cs.onPrimaryContainer)),
                   trailing: FilledButton(onPressed: () => widget.goTab(2), child: const Text('Choisir')),
                 ),
               ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: kpiCard(context, Icons.local_fire_department, 'Séances (7 j)', '$week')),
-              Expanded(child: kpiCard(context, Icons.event_available, 'Réservations', '${mine.length}')),
-              Expanded(child: kpiCard(context, Icons.monitor_weight, 'Poids', weight)),
+              Expanded(child: kpiCard(context, Icons.local_fire_department_rounded, 'Séances (7 j)', '$week', color: AppColors.ember)),
+              Expanded(child: kpiCard(context, Icons.event_available_rounded, 'Réservations', '${mine.length}')),
+              Expanded(child: kpiCard(context, Icons.monitor_weight_rounded, 'Poids', weight, color: AppColors.info)),
             ]),
-            sectionTitle(context, 'Mes programmes'),
+            SectionHeader('Mes programmes', action: TextButton(onPressed: () => widget.goTab(3), child: const Text('Tout voir'))),
             if (activePrograms.isEmpty)
-              Card(child: Empty(Icons.list_alt, 'Aucun programme actif.', cta: 'Créer ou trouver un coach', onTap: () => widget.goTab(3)))
+              Card(child: Empty(Icons.list_alt_rounded, 'Aucun programme actif.', cta: 'Créer ou trouver un coach', onTap: () => widget.goTab(3)))
             else
               for (final p in activePrograms.take(3))
                 Card(
                   child: ListTile(
-                    leading: Icon(p['coach_id'] == null ? Icons.person : Icons.sports),
+                    leading: IconBadge(p['coach_id'] == null ? Icons.person_rounded : Icons.sports_rounded),
                     title: Text('${p['title']}'),
                     subtitle: Text('${p['coach_id'] == null ? 'Personnel' : 'Par ${p['coach_name']}'} · ${p['sessions']} séance(s)${p['last_done'] == null ? '' : ' · dernière ${p['last_done']}'}'),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(builder: (_) => ProgramDetailPage(p['id'] as int)));
                       load();
                     },
                   ),
                 ),
-            sectionTitle(context, 'Mes prochains cours'),
+            SectionHeader('Mes prochains cours', action: TextButton(onPressed: () => widget.goTab(1), child: const Text('Planning'))),
             if (mine.isEmpty)
-              Card(child: Empty(Icons.event, 'Aucun cours réservé.', cta: 'Voir le planning', onTap: () => widget.goTab(1)))
+              Card(child: Empty(Icons.event_rounded, 'Aucun cours réservé.', cta: 'Voir le planning', onTap: () => widget.goTab(1)))
             else
               for (final c in mine.take(3))
-                Card(child: ListTile(leading: const Icon(Icons.check_circle, color: Colors.green), title: Text('${c['title']}'), subtitle: Text('${dayLabel(c['day'] as int)} · ${c['time']} · ${c['coach_name'] ?? '—'}'))),
-            if (ann.isNotEmpty) sectionTitle(context, 'Annonces'),
-            for (final a in ann.take(2)) Card(child: ListTile(leading: const Icon(Icons.campaign), title: Text('${a['title']}'), subtitle: Text('${a['body'] ?? ''}'))),
+                Card(
+                  child: ListTile(
+                    leading: const IconBadge(Icons.check_circle_rounded, color: AppColors.success),
+                    title: Text('${c['title']}'),
+                    subtitle: Text('${dayLabel(c['day'] as int)} · ${c['time']} · ${c['coach_name'] ?? '—'}'),
+                  ),
+                ),
+            if (ann.isNotEmpty) const SectionHeader('Annonces'),
+            for (final a in ann.take(2)) Card(child: ListTile(leading: const IconBadge(Icons.campaign_rounded), title: Text('${a['title']}'), subtitle: Text('${a['body'] ?? ''}'))),
             if (offers.isNotEmpty)
-              InkWell(
-                onTap: () => widget.goTab(2),
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Theme.of(context).colorScheme.primaryContainer),
-                  child: Row(children: [
-                    const Icon(Icons.local_offer, size: 32),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('${offers.first['title']} · -${offers.first['discount'] ?? 0}%', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text('${offers.first['descr'] ?? ''}'),
-                    ])),
-                  ]),
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => widget.goTab(2),
+                  child: Ink(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), gradient: AppColors.amberGradient),
+                    child: Row(children: [
+                      const Icon(Icons.local_offer_rounded, size: 32, color: AppColors.ink),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${offers.first['title']} · -${offers.first['discount'] ?? 0}%', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink, fontSize: 16)),
+                          Text('${offers.first['descr'] ?? ''}', style: const TextStyle(color: AppColors.ink)),
+                        ]),
+                      ),
+                      const Icon(Icons.arrow_forward_rounded, color: AppColors.ink),
+                    ]),
+                  ),
                 ),
               ),
           ]),
@@ -197,7 +206,7 @@ class ExplorePage extends StatefulWidget {
 
 class _ExplorePageState extends State<ExplorePage> {
   bool loading = true;
-  List<Map<String, dynamic>> plans = [], promos = [], products = [], ann = [], reqs = [];
+  List<Json> plans = [], promos = [], products = [], ann = [], reqs = [];
 
   @override
   void initState() {
@@ -206,57 +215,70 @@ class _ExplorePageState extends State<ExplorePage> {
   }
 
   Future<void> load() async {
-    final r = await Future.wait([safeList('plans'), safeList('promos'), safeList('products'), safeList('announcements'), safeList('requests')]);
+    final r = await Future.wait([CrudService.safeList('plans'), CrudService.safeList('promos'), CrudService.safeList('products'), CrudService.safeList('announcements'), CrudService.safeList('requests')]);
     plans = r[0]; promos = r[1]; products = r[2]; ann = r[3]; reqs = r[4];
     if (mounted) setState(() => loading = false);
   }
 
-  Future<void> choose(Map<String, dynamic> p) async {
-    if (!await confirm(context, 'Demander « ${p['name']} » ?', body: '${p['price']} DT · ${p['duration'] ?? ''}\nL\'abonnement sera activé par l\'administrateur après paiement à l\'accueil.', ok: 'Envoyer la demande')) return;
-    if (mounted && await attempt(context, () => Api.call('POST', 'requests', {'plan_id': p['id']}), success: 'Demande envoyée ✓')) load();
+  Future<void> choose(Json p) async {
+    if (!await confirm(context, 'Demander « ${p['name']} » ?', body: '${money(p['price'])} · ${p['duration'] ?? ''}\nL\'abonnement sera activé par l\'administrateur après paiement à l\'accueil.', ok: 'Envoyer la demande')) return;
+    if (mounted && await attempt(context, () => UserService.requestPlan(p['id'] as int), success: 'Demande envoyée ✓')) load();
   }
 
   Widget plansTab() {
-    if (plans.isEmpty) return const Empty(Icons.credit_card_off, 'Aucun tarif disponible pour le moment');
+    if (plans.isEmpty) return const Empty(Icons.credit_card_off_rounded, 'Aucun tarif disponible pour le moment');
     final pending = reqs.where((r) => r['status'] == 'pending').toList();
-    final cs = Theme.of(context).colorScheme;
-    return ListView(padding: const EdgeInsets.all(12), children: [
-      for (final p in plans)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(child: Text('${p['name']}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold))),
-                if (Api.me!['plan_id'] == p['id']) const Chip(label: Text('Mon offre')),
-              ]),
-              Text('${p['price']} DT', style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.bold)),
-              Text('${p['duration'] ?? ''}'),
-              if ((p['descr'] ?? '') != '') Padding(padding: const EdgeInsets.only(top: 4), child: Text('${p['descr']}')),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: pending.isNotEmpty ? null : () => choose(p),
-                  child: Text(pending.any((r) => r['plan_id'] == p['id']) ? 'Demande envoyée' : (Api.me!['plan_id'] == p['id'] ? 'Renouveler' : 'Choisir')),
+    final tt = Theme.of(context).textTheme;
+    final accent = Theme.of(context).brightness == Brightness.dark ? AppColors.amber : AppColors.amberText;
+    return GridView.extent(
+      padding: const EdgeInsets.all(16),
+      maxCrossAxisExtent: 420,
+      mainAxisExtent: 230,
+      crossAxisSpacing: 8,
+      children: [
+        for (final p in plans)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text('${p['name']}', style: tt.titleLarge)),
+                  if (Api.user!.planId == p['id']) const StatusPill('Mon offre', color: AppColors.success, icon: Icons.check_rounded),
+                ]),
+                const SizedBox(height: 6),
+                Text(money(p['price']), style: tt.headlineMedium?.copyWith(color: accent)),
+                Text('${p['duration'] ?? ''}', style: tt.bodyMedium),
+                if ((p['descr'] ?? '') != '') Padding(padding: const EdgeInsets.only(top: 4), child: Text('${p['descr']}', maxLines: 2, overflow: TextOverflow.ellipsis)),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: pending.isNotEmpty ? null : () => choose(p),
+                    child: Text(pending.any((r) => r['plan_id'] == p['id']) ? 'Demande envoyée' : (Api.user!.planId == p['id'] ? 'Renouveler' : 'Choisir')),
+                  ),
                 ),
-              ),
-            ]),
+              ]),
+            ),
           ),
-        ),
-    ]);
+      ],
+    );
   }
 
   Widget promosTab() {
     if (promos.isEmpty) return const Empty(Icons.local_offer_outlined, 'Aucune offre en ce moment');
     final today = todayIso();
-    return ListView(padding: const EdgeInsets.all(12), children: [
+    return ListView(padding: const EdgeInsets.all(16), children: [
       for (final p in promos)
         Builder(builder: (_) {
           final expired = p['until'] != null && '${p['until']}'.compareTo(today) < 0;
           return Card(
             child: ListTile(
-              leading: CircleAvatar(backgroundColor: expired ? Colors.grey : Theme.of(context).colorScheme.primary, foregroundColor: Colors.white, child: Text('-${p['discount'] ?? 0}%', style: const TextStyle(fontSize: 11))),
+              leading: CircleAvatar(
+                radius: 24,
+                backgroundColor: expired ? Theme.of(context).colorScheme.surfaceContainerHighest : AppColors.amber,
+                foregroundColor: AppColors.ink,
+                child: Text('-${p['discount'] ?? 0}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+              ),
               title: Text('${p['title']}'),
               subtitle: Text('${p['descr'] ?? ''}\n${expired ? "Expirée" : "Valable jusqu'au ${p['until'] ?? '—'}"}'),
               isThreeLine: true,
@@ -267,22 +289,29 @@ class _ExplorePageState extends State<ExplorePage> {
   }
 
   Widget shopTab() {
-    if (products.isEmpty) return const Empty(Icons.storefront, 'La boutique est vide');
+    if (products.isEmpty) return const Empty(Icons.storefront_rounded, 'La boutique est vide');
+    final accent = Theme.of(context).brightness == Brightness.dark ? AppColors.amber : AppColors.amberText;
     return Column(children: [
-      const Padding(padding: EdgeInsets.all(8), child: Text('Achat directement à l\'accueil de la salle.', style: TextStyle(fontSize: 12))),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: Text('Achat directement à l\'accueil de la salle.', style: Theme.of(context).textTheme.bodySmall)),
       Expanded(
         child: GridView.extent(
-          padding: const EdgeInsets.all(12), maxCrossAxisExtent: 220, childAspectRatio: 1.15, mainAxisSpacing: 8, crossAxisSpacing: 8,
+          padding: const EdgeInsets.all(16),
+          maxCrossAxisExtent: 220,
+          childAspectRatio: 1.0,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 8,
           children: [
             for (final p in products)
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.shopping_bag_outlined, size: 30),
-                    Text('${p['name']}', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text('${p['price']} DT', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
-                    Text(num2(p['stock']) <= 0 ? 'Rupture' : (num2(p['stock']) <= 5 ? 'Stock limité' : 'Disponible'), style: const TextStyle(fontSize: 12)),
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    const IconBadge(Icons.shopping_bag_rounded),
+                    Text('${p['name']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
+                    Text(money(p['price']), style: TextStyle(color: accent, fontWeight: FontWeight.w800, fontSize: 16)),
+                    num2(p['stock']) <= 0
+                        ? const StatusPill('Rupture', color: AppColors.danger)
+                        : (num2(p['stock']) <= 5 ? const StatusPill('Stock limité', color: AppColors.warning) : const StatusPill('Disponible', color: AppColors.success)),
                   ]),
                 ),
               ),
@@ -294,8 +323,9 @@ class _ExplorePageState extends State<ExplorePage> {
 
   Widget annTab() => ann.isEmpty
       ? const Empty(Icons.campaign_outlined, 'Aucune annonce')
-      : ListView(padding: const EdgeInsets.all(12), children: [
-          for (final a in ann) Card(child: ListTile(leading: const Icon(Icons.campaign), title: Text('${a['title']}'), subtitle: Text('${a['posted_on'] ?? ''}\n${a['body'] ?? ''}'), isThreeLine: true)),
+      : ListView(padding: const EdgeInsets.all(16), children: [
+          for (final a in ann)
+            Card(child: ListTile(leading: const IconBadge(Icons.campaign_rounded), title: Text('${a['title']}'), subtitle: Text('${a['posted_on'] ?? ''}\n${a['body'] ?? ''}'), isThreeLine: true)),
         ]);
 
   @override
@@ -305,8 +335,8 @@ class _ExplorePageState extends State<ExplorePage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Explorer'),
-          bottom: const TabBar(isScrollable: true, tabs: [Tab(text: 'Tarifs'), Tab(text: 'Coachs'), Tab(text: 'Offres'), Tab(text: 'Boutique'), Tab(text: 'Annonces')]),
-          actions: [IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh))],
+          bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [Tab(text: 'Tarifs'), Tab(text: 'Coachs'), Tab(text: 'Offres'), Tab(text: 'Boutique'), Tab(text: 'Annonces')]),
+          actions: [IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh_rounded))],
         ),
         body: loading ? const Center(child: CircularProgressIndicator()) : TabBarView(children: [plansTab(), const CoachesTab(), promosTab(), shopTab(), annTab()]),
       ),
@@ -319,18 +349,26 @@ class MySpacePage extends StatelessWidget {
   const MySpacePage({super.key});
   @override
   Widget build(BuildContext context) {
-    Widget item(IconData i, String t, String s, Widget page) => Card(
-          child: ListTile(leading: Icon(i), title: Text(t), subtitle: Text(s), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page))),
+    Widget item(IconData i, String t, String s, Widget page, {Color? color}) => Card(
+          child: ListTile(
+            leading: IconBadge(i, color: color),
+            title: Text(t),
+            subtitle: Text(s),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+          ),
         );
     return Scaffold(
       appBar: AppBar(title: const Text('Mon espace')),
-      body: ListView(padding: const EdgeInsets.all(12), children: [
-        item(Icons.list_alt, 'Mes programmes', 'Programmes personnels et programmes de mon coach', const ProgramsPage()),
-        item(Icons.local_fire_department, 'Mes séances', 'Historique d\'entraînement et commentaires du coach', const WorkoutHistoryPage()),
-        item(Icons.show_chart, 'Ma progression', 'Poids, masse grasse, historique', ProgressPage(memberId: Api.myId!, title: 'Ma progression')),
-        item(Icons.sports, 'Mes coachs', 'Suivi en cours et demandes', const MyCoachesPage()),
-        item(Icons.how_to_reg, 'Mes présences', 'Mes venues aux cours collectifs', const AttendancePage()),
-        item(Icons.receipt_long, 'Mes paiements', 'Historique de mes règlements', CrudPage(moduleById('payments'))),
+      body: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
+        const SectionHeader('Entraînement'),
+        item(Icons.list_alt_rounded, 'Mes programmes', 'Programmes personnels et programmes de mon coach', const ProgramsPage()),
+        item(Icons.local_fire_department_rounded, 'Mes séances', 'Historique d\'entraînement et commentaires du coach', const WorkoutHistoryPage(), color: AppColors.ember),
+        item(Icons.show_chart_rounded, 'Ma progression', 'Poids, masse grasse, historique', ProgressPage(memberId: Api.myId!, title: 'Ma progression'), color: AppColors.info),
+        const SectionHeader('Suivi'),
+        item(Icons.sports_rounded, 'Mes coachs', 'Suivi en cours et demandes', const MyCoachesPage()),
+        item(Icons.how_to_reg_rounded, 'Mes présences', 'Mes venues aux cours collectifs', const AttendancePage(), color: AppColors.success),
+        item(Icons.receipt_long_rounded, 'Mes paiements', 'Historique de mes règlements', CrudPage(moduleById('payments'))),
       ]),
     );
   }
@@ -345,7 +383,7 @@ class ProgressView extends StatefulWidget {
 }
 
 class _ProgressViewState extends State<ProgressView> {
-  List<Map<String, dynamic>> ms = [];
+  List<Json> ms = [];
   bool loading = true;
   String? error;
 
@@ -357,7 +395,7 @@ class _ProgressViewState extends State<ProgressView> {
 
   Future<void> load() async {
     try {
-      final l = await Api.list(Api.withQuery('measures', {'member_id': widget.memberId}));
+      final l = await UserService.measures(widget.memberId);
       l.sort((a, b) => '${a['measured_on']}'.compareTo('${b['measured_on']}'));
       ms = l;
       error = null;
@@ -373,7 +411,7 @@ class _ProgressViewState extends State<ProgressView> {
       DField('weight', 'Poids (kg)', type: DType.decimal, min: 20, max: 400),
       DField('body_fat', 'Masse grasse (%)', type: DType.decimal, max: 100),
       DField('note', 'Note'),
-    ], submit: (v) => Api.call('POST', 'measures', {...v, 'member_id': widget.memberId}));
+    ], submit: (v) => UserService.addMeasure(widget.memberId, v));
     if (r != null) load();
   }
 
@@ -389,21 +427,22 @@ class _ProgressViewState extends State<ProgressView> {
       onRetry: load,
       builder: () => RefreshIndicator(
         onRefresh: load,
-        child: ListView(padding: const EdgeInsets.all(12), physics: const AlwaysScrollableScrollPhysics(), children: [
-          Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: add, icon: const Icon(Icons.add), label: const Text('Ajouter une mesure'))),
+        child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), physics: const AlwaysScrollableScrollPhysics(), children: [
+          Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: add, icon: const Icon(Icons.add_rounded), label: const Text('Ajouter une mesure'))),
           if (ms.isEmpty)
-            const Empty(Icons.show_chart, 'Aucune mesure pour le moment.')
+            const Empty(Icons.show_chart_rounded, 'Aucune mesure pour le moment.')
           else ...[
+            const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: kpiCard(context, Icons.monitor_weight, 'Poids actuel', w.isEmpty ? '—' : '${w.last} kg')),
-              Expanded(child: kpiCard(context, delta <= 0 ? Icons.trending_down : Icons.trending_up, 'Évolution', '${delta > 0 ? "+" : ""}${delta.toStringAsFixed(1)} kg')),
-              Expanded(child: kpiCard(context, Icons.percent, 'Masse grasse', fat.isEmpty ? '—' : '${fat.last['body_fat']} %')),
+              Expanded(child: kpiCard(context, Icons.monitor_weight_rounded, 'Poids actuel', w.isEmpty ? '—' : '${w.last} kg')),
+              Expanded(child: kpiCard(context, delta <= 0 ? Icons.trending_down_rounded : Icons.trending_up_rounded, 'Évolution', '${delta > 0 ? "+" : ""}${delta.toStringAsFixed(1)} kg', color: delta <= 0 ? AppColors.success : AppColors.ember)),
+              Expanded(child: kpiCard(context, Icons.percent_rounded, 'Masse grasse', fat.isEmpty ? '—' : '${fat.last['body_fat']} %', color: AppColors.info)),
             ]),
             if (w.length >= 2)
-              Card(child: Padding(padding: const EdgeInsets.all(12), child: SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: LinePainter(w, cs.primary, cs.onSurface))))),
-            sectionTitle(context, 'Historique'),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: SizedBox(height: 190, width: double.infinity, child: CustomPaint(painter: LinePainter(w, cs.primary, cs.onSurface))))),
+            const SectionHeader('Historique'),
             for (final m in ms.reversed)
-              Card(child: ListTile(title: Text('${m['weight'] ?? '—'} kg · ${m['body_fat'] ?? '—'} % MG'), subtitle: Text('${m['measured_on'] ?? '—'} · ${m['note'] ?? ''}'))),
+              Card(child: ListTile(leading: const IconBadge(Icons.monitor_weight_outlined), title: Text('${m['weight'] ?? '—'} kg · ${m['body_fat'] ?? '—'} % MG'), subtitle: Text('${m['measured_on'] ?? '—'} · ${m['note'] ?? ''}'))),
           ],
         ]),
       ),
@@ -426,7 +465,7 @@ class AttendancePage extends StatefulWidget {
 }
 
 class _AttendancePageState extends State<AttendancePage> {
-  List<Map<String, dynamic>> list = [];
+  List<Json> list = [];
   bool loading = true;
   String? error;
 
@@ -438,7 +477,7 @@ class _AttendancePageState extends State<AttendancePage> {
 
   Future<void> load() async {
     try {
-      final l = await Api.list(Api.withQuery('checkins', {'member_id': Api.myId}));
+      final l = await UserService.checkins(Api.myId!);
       l.sort((a, b) => '${b['checkin_on']}'.compareTo('${a['checkin_on']}'));
       list = l;
       error = null;
@@ -458,15 +497,16 @@ class _AttendancePageState extends State<AttendancePage> {
         error: error,
         onRetry: load,
         builder: () => list.isEmpty
-            ? const Empty(Icons.how_to_reg, 'Aucune présence enregistrée.\nVos venues sont pointées par le coach pendant les cours.')
-            : ListView(padding: const EdgeInsets.all(12), children: [
+            ? const Empty(Icons.how_to_reg_rounded, 'Aucune présence enregistrée.\nVos venues sont pointées par le coach pendant les cours.')
+            : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
                 Row(children: [
-                  Expanded(child: kpiCard(context, Icons.calendar_month, 'Ce mois', '${list.where((c) => '${c['checkin_on']}'.startsWith(month)).length}')),
-                  Expanded(child: kpiCard(context, Icons.emoji_events, 'Total', '${list.length}')),
-                  Expanded(child: kpiCard(context, Icons.history, 'Dernière venue', '${list.first['checkin_on'] ?? '—'}'.replaceFirst(RegExp(r'^\d{4}-'), ''))),
+                  Expanded(child: kpiCard(context, Icons.calendar_month_rounded, 'Ce mois', '${list.where((c) => '${c['checkin_on']}'.startsWith(month)).length}')),
+                  Expanded(child: kpiCard(context, Icons.emoji_events_rounded, 'Total', '${list.length}', color: AppColors.ember)),
+                  Expanded(child: kpiCard(context, Icons.history_rounded, 'Dernière venue', '${list.first['checkin_on'] ?? '—'}'.replaceFirst(RegExp(r'^\d{4}-'), ''), color: AppColors.info)),
                 ]),
-                sectionTitle(context, 'Historique'),
-                for (final c in list) Card(child: ListTile(leading: const Icon(Icons.check_circle, color: Colors.green), title: Text('${c['note'] ?? 'Entraînement'}'), subtitle: Text('${c['checkin_on'] ?? '—'}'))),
+                const SectionHeader('Historique'),
+                for (final c in list)
+                  Card(child: ListTile(leading: const IconBadge(Icons.check_circle_rounded, color: AppColors.success), title: Text('${c['note'] ?? 'Entraînement'}'), subtitle: Text('${c['checkin_on'] ?? '—'}'))),
               ]),
       ),
     );

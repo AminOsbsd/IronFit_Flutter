@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/network/api_client.dart';
+import '../core/theme/app_theme.dart';
+import '../services/coach_service.dart';
+import '../services/notification_service.dart';
+import '../services/planning_service.dart';
 import '../widgets/common_widgets.dart';
 import 'member_screens.dart';
 import 'notifications_screen.dart';
@@ -33,11 +37,11 @@ class _CoachHomeState extends State<CoachHome> {
   Future<void> load() async {
     try {
       await Api.refreshMe();
-      st = await Api.get('stats');
-      pending = (await Api.list('coaching/clients')).where((l) => l['status'] == 'pending').toList();
+      st = await CoachService.stats();
+      pending = (await CoachService.clients()).where((l) => l['status'] == 'pending').toList();
       final dow = DateTime.now().weekday - 1;
-      today = (await Api.list('classes')).where((c) => c['day'] == dow && c['coach_id'] == Api.myId).toList();
-      Api.refreshUnread();
+      today = (await PlanningService.classes()).where((c) => c['day'] == dow && c['coach_id'] == Api.myId).toList();
+      NotificationService.refreshUnread();
       error = null;
     } catch (e) {
       error = '$e';
@@ -46,16 +50,16 @@ class _CoachHomeState extends State<CoachHome> {
   }
 
   Future<void> answer(Map<String, dynamic> l, bool accept) async {
-    if (await attempt(context, () => Api.call('POST', 'coaching/${l['id']}/${accept ? 'accept' : 'decline'}'), success: accept ? '${l['client_name']} fait partie de vos clients ✓' : null)) load();
+    if (await attempt(context, () => CoachService.answer(l['id'] as int, accept: accept), success: accept ? '${l['client_name']} fait partie de vos clients ✓' : null)) load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final me = Api.me!;
+    final me = Api.user!;
     final expiring = L('expiring'), maint = L('maintenance'), fill = L('fill');
     return Scaffold(
       appBar: AppBar(
-        title: Text('Coach ${'${me['name']}'.split(' ').first}'),
+        title: Text('Coach ${me.firstName}'),
         actions: [NotificationBell(page: () => const NotificationsPage()), IconButton(tooltip: 'Actualiser', onPressed: load, icon: const Icon(Icons.refresh))],
       ),
       body: AsyncBody(
@@ -65,20 +69,35 @@ class _CoachHomeState extends State<CoachHome> {
         builder: () => RefreshIndicator(
           onRefresh: load,
           child: ListView(padding: const EdgeInsets.all(12), children: [
+            HeroCard(
+              child: Row(children: [
+                InitialAvatar(me.name, radius: 26),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('ESPACE COACH', style: TextStyle(color: Colors.white70, letterSpacing: 1.6, fontSize: 12, fontWeight: FontWeight.w700)),
+                    Text(me.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                    Text(me.specialty ?? 'Coach IronFit', style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+                if (pending.isNotEmpty) StatusPill('${pending.length} demande${pending.length > 1 ? 's' : ''}', color: AppColors.amber, icon: Icons.person_add_alt_1_rounded),
+              ]),
+            ),
+            const SizedBox(height: 12),
             kpiGrid([
                 kpiCard(context, Icons.groups, 'Clients suivis', '${st['clients'] ?? 0}'),
                 kpiCard(context, Icons.list_alt, 'Programmes actifs', '${st['programs'] ?? 0}'),
-                kpiCard(context, Icons.local_fire_department, 'Séances clients (7 j)', '${st['workouts7d'] ?? 0}', color: Colors.green),
-                kpiCard(context, Icons.rate_review, 'Séances à commenter', '${st['toReview'] ?? 0}', color: Colors.orange),
+                kpiCard(context, Icons.local_fire_department, 'Séances clients (7 j)', '${st['workouts_7d'] ?? 0}', color: AppColors.success),
+                kpiCard(context, Icons.rate_review, 'Séances à commenter', '${st['to_review'] ?? 0}', color: AppColors.ember),
               ]),
             if (pending.isNotEmpty) ...[
               sectionTitle(context, 'Demandes de suivi'),
               for (final l in pending)
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.person_add),
+                    leading: const IconBadge(Icons.person_add_alt_1_rounded, color: AppColors.info),
                     title: Text('${l['client_name']}'),
-                    subtitle: Text('@${l['client_login']} · demandé le ${'${l['created']}'.split(' ').first}'),
+                    subtitle: Text('@${l['client_login']} · demandé le ${dateOnly(l['created'])}'),
                     trailing: Wrap(spacing: 4, children: [
                       TextButton(onPressed: () => answer(l, false), child: const Text('Refuser')),
                       FilledButton(onPressed: () => answer(l, true), child: const Text('Accepter')),
@@ -91,7 +110,7 @@ class _CoachHomeState extends State<CoachHome> {
             for (final c in today)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.schedule),
+                  leading: const IconBadge(Icons.schedule_rounded),
                   title: Text('${c['time']} · ${c['title']}'),
                   subtitle: Text('${c['taken']}/${c['spots']} inscrits'),
                   trailing: OutlinedButton(onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => ParticipantsPage(c))); load(); }, child: const Text('Pointer')),
@@ -99,11 +118,11 @@ class _CoachHomeState extends State<CoachHome> {
               ),
             if (expiring.isNotEmpty) ...[
               sectionTitle(context, 'Abonnements de mes clients qui expirent'),
-              for (final a in expiring) Card(child: ListTile(leading: const Icon(Icons.timer, color: Colors.orange), title: Text('${a['name']}'), subtitle: Text('Expire le ${a['sub_end']}'))),
+              for (final a in expiring) Card(child: ListTile(leading: const IconBadge(Icons.timer_outlined, color: AppColors.warning), title: Text('${a['name']}'), subtitle: Text('Expire le ${a['sub_end']}'))),
             ],
             if (maint.isNotEmpty) ...[
               sectionTitle(context, 'Matériel à vérifier'),
-              Card(child: ListTile(leading: const Icon(Icons.build, color: Colors.orange), title: Text(maint.map((e) => e['name']).join(', ')))),
+              Card(child: ListTile(leading: const IconBadge(Icons.build_rounded, color: AppColors.warning), title: Text(maint.map((e) => e['name']).join(', ')))),
             ],
             if (fill.isNotEmpty) ...[
               sectionTitle(context, 'Remplissage de mes cours'),
@@ -153,7 +172,7 @@ class _ClientsPageState extends State<ClientsPage> {
 
   Future<void> load() async {
     try {
-      links = await Api.list('coaching/clients');
+      links = await CoachService.clients();
       error = null;
     } catch (e) {
       error = '$e';
@@ -162,7 +181,7 @@ class _ClientsPageState extends State<ClientsPage> {
   }
 
   Future<void> answer(Map<String, dynamic> l, bool accept) async {
-    if (await attempt(context, () => Api.call('POST', 'coaching/${l['id']}/${accept ? 'accept' : 'decline'}'))) load();
+    if (await attempt(context, () => CoachService.answer(l['id'] as int, accept: accept))) load();
   }
 
   @override
@@ -184,7 +203,7 @@ class _ClientsPageState extends State<ClientsPage> {
               for (final l in pending)
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.person_add),
+                    leading: const IconBadge(Icons.person_add_alt_1_rounded, color: AppColors.info),
                     title: Text('${l['client_name']}'),
                     subtitle: Text('@${l['client_login']}'),
                     trailing: Wrap(spacing: 4, children: [
@@ -201,7 +220,7 @@ class _ClientsPageState extends State<ClientsPage> {
             for (final l in active)
               Card(
                 child: ListTile(
-                  leading: CircleAvatar(child: Text('${l['client_name']}'[0].toUpperCase())),
+                  leading: InitialAvatar('${l['client_name']}'),
                   title: Text('${l['client_name']}'),
                   subtitle: Text([
                     l['client_sub_end'] == null ? 'Sans abonnement' : ('${l['client_sub_end']}'.compareTo(today) < 0 ? 'Abonnement expiré' : 'Abonné jusqu\'au ${l['client_sub_end']}'),
@@ -230,7 +249,7 @@ class ClientDetailPage extends StatelessWidget {
 
   Future<void> end(BuildContext context) async {
     if (!await confirm(context, 'Arrêter le suivi de ${link['client_name']} ?', body: 'Vous n\'aurez plus accès à ses données ni aux programmes que vous lui avez écrits.', ok: 'Arrêter')) return;
-    if (context.mounted && await attempt(context, () => Api.call('POST', 'coaching/${link['id']}/end')) && context.mounted) Navigator.pop(context);
+    if (context.mounted && await attempt(context, () => CoachService.endLink(link['id'] as int)) && context.mounted) Navigator.pop(context);
   }
 
   @override
@@ -249,7 +268,7 @@ class ClientDetailPage extends StatelessWidget {
           ),
           body: Column(children: [
             if (link['client_phone'] != null)
-              ListTile(dense: true, leading: const Icon(Icons.phone), title: Text('${link['client_phone']}')),
+              ListTile(dense: true, leading: const Icon(Icons.phone_rounded), title: Text('${link['client_phone']}')),
             Expanded(
               child: TabBarView(children: [
                 ProgramList(scope: 'coaching', clientId: clientId, emptyText: 'Aucun programme pour ce client.\nCréez-en un pour commencer le suivi.'),

@@ -1,11 +1,17 @@
-# Base de données locale, secret de signature des jetons et configuration : jamais versionnés
+# Données locales (ancienne base SQLite, clé JWT générée) et configuration : jamais versionnées
 backend/data/
 backend/.env
 .env
 
-# Node
+# Maven / Spring Boot
+backend/target/
+*.log
+
+# Export SQL de migration (contient des données personnelles)
+ironfit-import.sql
+
+# Node (outil de migration uniquement)
 node_modules/
-npm-debug.log*
 
 # Divers
 .DS_Store

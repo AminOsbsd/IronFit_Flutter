@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../core/theme/app_theme.dart';
+import '../services/notification_service.dart';
+import '../services/user_service.dart' show Json;
 import '../widgets/common_widgets.dart';
 
 /// Notifications personnelles (abonnement, coaching, programmes, annonces…).
@@ -10,7 +12,7 @@ class NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  List<Map<String, dynamic>> items = [];
+  List<Json> items = [];
   bool loading = true;
   String? error;
 
@@ -22,9 +24,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   Future<void> load() async {
     try {
-      final r = await Api.get(Api.withQuery('notifications', {'limit': 100}));
-      items = (r['items'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      Api.unread.value = (r['unread'] ?? 0) as int;
+      items = await NotificationService.load();
       error = null;
     } catch (e) {
       error = '$e';
@@ -32,17 +32,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (mounted) setState(() => loading = false);
   }
 
-  Future<void> read(Map<String, dynamic> n) async {
-    if (n['seen'] == 1) return;
+  Future<void> read(Json n) async {
+    if (isTrue(n['seen'])) return;
     try {
-      await Api.call('POST', 'notifications/${n['id']}/read');
-      setState(() => n['seen'] = 1);
-      Api.unread.value = (Api.unread.value - 1).clamp(0, 1 << 30);
+      await NotificationService.markRead(n['id'] as int);
+      setState(() => n['seen'] = true);
     } catch (_) {}
   }
 
   Future<void> readAll() async {
-    if (await attempt(context, () => Api.call('POST', 'notifications/read-all'))) load();
+    if (await attempt(context, NotificationService.markAllRead)) load();
   }
 
   @override
@@ -50,7 +49,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications'), actions: [
-        if (items.any((n) => n['seen'] == 0)) TextButton(onPressed: readAll, child: const Text('Tout lire')),
+        if (items.any((n) => !isTrue(n['seen']))) TextButton.icon(onPressed: readAll, icon: const Icon(Icons.done_all_rounded), label: const Text('Tout lire')),
       ]),
       body: AsyncBody(
         loading: loading,
@@ -59,17 +58,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
         builder: () => RefreshIndicator(
           onRefresh: load,
           child: items.isEmpty
-              ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 80), Empty(Icons.notifications_none, 'Aucune notification')])
+              ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 80), Empty(Icons.notifications_none_rounded, 'Aucune notification')])
               : ListView.builder(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   itemCount: items.length,
                   itemBuilder: (_, i) {
-                    final n = items[i], unseen = n['seen'] == 0;
+                    final n = items[i], unseen = !isTrue(n['seen']);
                     return Card(
-                      color: unseen ? cs.primaryContainer : null,
+                      color: unseen ? cs.primaryContainer.withValues(alpha: 0.55) : null,
                       child: ListTile(
-                        leading: Icon(unseen ? Icons.circle_notifications : Icons.notifications_none),
-                        title: Text('${n['title']}', style: TextStyle(fontWeight: unseen ? FontWeight.bold : FontWeight.normal)),
+                        leading: IconBadge(unseen ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, color: unseen ? AppColors.ember : null),
+                        title: Text('${n['title']}', style: TextStyle(fontWeight: unseen ? FontWeight.w800 : FontWeight.w500)),
                         subtitle: Text('${n['body'] ?? ''}${n['body'] == null ? '' : '\n'}${localStamp(n['created'])}'),
                         isThreeLine: n['body'] != null,
                         onTap: () => read(n),
