@@ -28,4 +28,8 @@ public interface CoachClientRepository extends JpaRepository<CoachClient, Long> 
     long countByStatus(String status);
 
     long countByCoachIdAndStatus(Long coachId, String status);
+
+    /** [id du client, id de son coach] pour les relations actives. */
+    @Query("select cc.client.id, cc.coach.id from CoachClient cc where cc.status = 'active' and cc.client.id in :clientIds")
+    List<Object[]> activeCoachPairs(@Param("clientIds") Collection<Long> clientIds);
 }
