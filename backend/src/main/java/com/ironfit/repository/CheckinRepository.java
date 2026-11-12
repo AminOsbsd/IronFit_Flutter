@@ -23,4 +23,14 @@ public interface CheckinRepository extends JpaRepository<Checkin, Long> {
 
     @Query("select x.member.id from Checkin x where x.checkinOn = :date and x.note = :note")
     List<Long> memberIdsPresent(@Param("date") LocalDate date, @Param("note") String note);
+
+    // ---- Rétention : agrégats par membre ----
+
+    /** [id du membre, date de sa dernière présence] */
+    @Query("select x.member.id, max(x.checkinOn) from Checkin x where x.member.id in :ids group by x.member.id")
+    List<Object[]> lastByMember(@Param("ids") Collection<Long> ids);
+
+    /** [id du membre, nombre de présences depuis la date donnée] */
+    @Query("select x.member.id, count(x) from Checkin x where x.member.id in :ids and x.checkinOn >= :from group by x.member.id")
+    List<Object[]> countSinceByMember(@Param("ids") Collection<Long> ids, @Param("from") LocalDate from);
 }

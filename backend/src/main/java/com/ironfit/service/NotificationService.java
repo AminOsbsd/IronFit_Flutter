@@ -11,7 +11,11 @@ public interface NotificationService {
 
     void markAllRead(CurrentUser me);
 
+    /** Notification dans l'application + copie par e-mail (en arrière-plan). */
     void notify(Long userId, String title, String body);
+
+    /** Idem, avec choix de la copie par e-mail (false : l'appelant envoie lui-même l'e-mail). */
+    void notify(Long userId, String title, String body, boolean emailCopy);
 
     /** Tous les membres actifs (athlètes et coachs), sauf l'auteur. */
     void notifyAllMembers(Long excludedUserId, String title, String body);

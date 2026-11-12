@@ -11,6 +11,7 @@ import 'coach_screens.dart';
 import 'crud_screen.dart';
 import 'member_screens.dart';
 import 'planning_screen.dart';
+import 'risk_screen.dart';
 
 /// Navigation selon le rôle :
 ///  - Membre                      : Accueil · Planning · Explorer · Mon espace · Profil
@@ -215,6 +216,7 @@ class ModulesGrid extends StatelessWidget {
           if (Api.isAdmin) ...[
             tile(context, Icons.assignment_ind_rounded, 'Demandes d\'abonnement', 'Valider les paiements', const RequestsPage()),
             tile(context, Icons.handshake_rounded, 'Suivis coaching', 'Relations coach / client', const CoachingAdminPage()),
+            tile(context, Icons.trending_down_rounded, 'Membres à risque', 'Détecter et relancer', const RiskPage()),
           ],
           for (final m in list) tile(context, m.icon, m.title, m.write.contains(Api.role) ? 'Consulter et modifier' : 'Consulter', CrudPage(m)),
         ],

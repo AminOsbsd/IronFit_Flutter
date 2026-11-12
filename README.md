@@ -316,6 +316,7 @@ Codes : 400 (validation / JSON), 401 (non connecté, session expirée ou compte 
 | Données membre | `GET /payments\|measures\|checkins?member_id=&scope=clients` ; écriture paiements : admin ; mesures : admin, soi, son coach ; présences : admin, son coach | |
 | Notifications | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | connecté |
 | Statistiques | `GET /stats` | admin (global) · coach (ses clients et cours) |
+| Membres à risque | `GET /risk[?all=true]` · `POST /risk/{memberId}/remind` · `POST /risk/run` | admin (tous) · coach (ses clients actifs) · `run` : admin seul |
 
 Exemples :
 
@@ -327,6 +328,38 @@ curl -s localhost:8080/api/coaching/clients -H "Authorization: Bearer $TOKEN"
 curl -s -X POST localhost:8080/api/programs -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"title":"Gainage","goal":"Tonus","client_id":4}'
 curl -s "localhost:8080/api/members?q=karray&limit=20" -H "Authorization: Bearer $TOKEN"
+```
+
+### Membres à risque d'abandon (rétention)
+
+Chaque membre reçoit un **score de risque de 0 à 100**, calculé par le serveur (`retention/ChurnScorer.java`, classe pure et testée) à partir de trois signaux déjà présents en base :
+
+| Signal | Points | Règle |
+|---|---|---|
+| Inactivité | 0 à 50 | jours depuis la dernière séance ou présence : 0 point jusqu'à 3 jours, 50 points à 21 jours |
+| Régularité | 0 à 25 | séances + présences sur 28 jours : 0 → 25 pts · 1 à 3 → 15 pts · 4 à 7 → 5 pts (non évaluée les 14 premiers jours du compte) |
+| Abonnement | 0 à 25 | expiré → 25 pts · expire dans ≤ 7 jours → 20 pts · ≤ 14 jours → 10 pts |
+
+Niveaux : **élevé** ≥ 60 · **moyen** ≥ 35 · faible en dessous. Chaque score est accompagné de ses explications (`reasons`).
+
+- **Analyse automatique** : `RetentionJob` (`@Scheduled`, tous les jours à 8 h, réglable avec `RETENTION_CRON`, désactivable avec `RETENTION_ENABLED=false`). Pour chaque membre à risque **élevé** dont l'abonnement n'a pas expiré depuis plus de 30 jours et qui n'a pas été relancé depuis 7 jours : notification au membre, e-mail au membre, notification à son ou ses coachs. Chaque relance est enregistrée dans la table `retention_alerts` (anti-spam et historique).
+- **Relance manuelle** : bouton « Relancer » (coach de ce membre ou admin), une par membre et par jour.
+- **E-mails** : facultatifs. Sans `spring.mail.host`, rien n'est envoyé et seul le message est journalisé. Pour tester en local avec MailHog ou Mailpit (port SMTP 1025), ajouter dans `backend/.env` : `spring.mail.host=localhost` et `spring.mail.port=1025`. L'expéditeur se règle avec `MAIL_FROM`. **Toutes les notifications de l'application** (abonnement, coaching, programmes, annonces…) sont aussi envoyées par e-mail aux comptes ayant une vraie adresse (les adresses factices `@ironfit.local` sont ignorées) ; `NOTIFY_EMAIL=false` désactive cette copie.
+- **Écrans** : Espace coach → Accueil → « Membres à risque d'abandon » ; Administration → « Membres à risque » (bouton ▶ pour lancer l'analyse tout de suite).
+
+Démonstration (les données de démo sont toutes récentes, personne n'est à risque au départ) : faire « décrocher » Youssef dans phpMyAdmin, puis ouvrir l'écran ou lancer l'analyse.
+
+```sql
+UPDATE workouts SET done_on = CURDATE() - INTERVAL 20 DAY WHERE user_id = (SELECT id FROM users WHERE login = 'youssef');
+UPDATE checkins SET checkin_on = CURDATE() - INTERVAL 25 DAY WHERE member_id = (SELECT id FROM users WHERE login = 'youssef');
+UPDATE users SET sub_end = CURDATE() + INTERVAL 3 DAY WHERE login = 'youssef';
+```
+
+```bash
+# connecté en coach (sami) : la liste, puis relance
+curl -s localhost:8080/api/risk -H "Authorization: Bearer $TOKEN"
+# connecté en admin : lancer l'analyse automatique maintenant
+curl -s -X POST localhost:8080/api/risk/run -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ---
@@ -370,7 +403,7 @@ Pour un téléphone réel : le backend écoute déjà sur toutes les interfaces 
 ## 15. Tests et compilation
 
 ```bash
-# Backend : 31 tests d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
+# Backend : tests unitaires et d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
 cd backend
 .\mvnw.cmd test
 
