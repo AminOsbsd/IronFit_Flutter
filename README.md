@@ -43,6 +43,9 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | Programmes personnels ou écrits par le coach | Séances réalisées par ses clients et **commentaires** | Tarifs, promotions, boutique, matériel, annonces, paiements |
 | Journal de séances, courbe de poids, présences, paiements | Mesures et présences de ses clients ; planning et pointage de ses cours | Mesures, présences et planning de toute la salle |
 | Notifications (abonnement, coaching, programme, commentaire, annonce, cours annulé) | Notifications (nouvelle demande, séance terminée…) | Notifications |
+| **AI Coach** : conseils personnalisés à partir de ses programmes, séances, mesures et réservations | **AI Coach** : aide à la programmation et au suivi des clients (chiffres agrégés) | **AI Coach** : aide à la gestion de la salle (chiffres agrégés) |
+
+**AI Coach** : bouton flottant « AI Coach » en bas à droite de tous les onglets principaux, qui ouvre un chat (panneau latéral sur grand écran, feuille plein écran sur téléphone). Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
 
 **Interface** : identité visuelle noir / ambre / blanc tirée du logo, thèmes clair et sombre (suivant le système), logo officiel en grand sur l'écran de connexion et en filigrane discret sur les autres écrans, mise en page adaptée au téléphone (barre de navigation en bas) et au grand écran (rail latéral avec le logo dès 900 px).
 
@@ -109,7 +112,8 @@ IronFit_Flutter/
 │     │  ├─ dto/                   Requêtes / réponses par domaine
 │     │  ├─ security/              JwtService, JwtAuthFilter, PasswordHasher, RateLimiter, CurrentUser…
 │     │  ├─ config/                SecurityConfig, JacksonConfig, AppProperties, DataInitializer, XamppMariaDbDialect
-│     │  └─ exception/             ApiException, ErrorResponse, GlobalExceptionHandler
+│     │  ├─ exception/             ApiException, ErrorResponse, GlobalExceptionHandler
+│     │  └─ ai/                    AI Coach : OpenRouterClient (proxy SSE), CoachPrompt (prompt système)
 │     ├─ main/resources/application.properties
 │     └─ test/                     31 tests d'intégration (MockMvc + H2 en mode MySQL)
 └─ app/                            Application Flutter
@@ -122,7 +126,8 @@ IronFit_Flutter/
    │  ├─ core/theme/               app_theme.dart, brand.dart
    │  ├─ models/                   app_user.dart, module.dart (modules CRUD déclaratifs)
    │  ├─ services/                 auth, user, coach, program, planning, admin, catalog, notification
-   │  ├─ widgets/                  common_widgets.dart (cartes, indicateurs, graphiques…), form_dialog.dart
+   │  ├─ widgets/                  common_widgets.dart (cartes, indicateurs, graphiques…), form_dialog.dart,
+   │  │                            ai_coach.dart (bouton flottant + panneau de chat AI Coach)
    │  └─ screens/                  auth, home_shell, member, coaches, program, coach, admin, planning,
    │                               crud, notifications
    ├─ test/                        Tests unitaires, widgets et intégration avec le backend
@@ -250,6 +255,23 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 | `ADMIN_PASSWORD` | `admin123` | Compte `admin` créé sur base vide |
 | `SEED_DEMO` | `true` | Données de démonstration sur base vide |
 | `SHOW_RESET_CODE` | `true` | Code « mot de passe oublié » renvoyé à l'app (démo) |
+| `OPENROUTER_API_KEY` | *(vide)* | Clé OpenRouter d'AI Coach (serveur uniquement) ; vide = AI Coach désactivé |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Modèle OpenRouter utilisé par AI Coach |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API compatible OpenAI (modifiable pour un proxy ou des tests) |
+| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_TITLE` | URL du dépôt / `IronFit` | En-têtes `HTTP-Referer` et `X-Title` recommandés par OpenRouter |
+| `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS` | `30` / `90` | Attente du début de la réponse / durée maximale d'une réponse |
+| `AI_MAX_TOKENS` | `700` | Longueur maximale d'une réponse |
+| `AI_RATE_LIMIT` | `12` | Messages AI Coach par minute et par utilisateur |
+
+### 9.1 AI Coach (OpenRouter)
+
+1. Créer une clé sur [openrouter.ai/keys](https://openrouter.ai/keys) (et ajouter un peu de crédit).
+2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)).
+3. Redémarrer le backend, ouvrir l'application, cliquer sur **AI Coach** (en bas à droite).
+
+Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
+
+> La clé OpenRouter ne doit jamais être mise dans l'application Flutter ni dans un fichier versionné.
 
 ---
 
@@ -317,6 +339,7 @@ Codes : 400 (validation / JSON), 401 (non connecté, session expirée ou compte 
 | Notifications | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | connecté |
 | Statistiques | `GET /stats` | admin (global) · coach (ses clients et cours) |
 | Membres à risque | `GET /risk[?all=true]` · `POST /risk/{memberId}/remind` · `POST /risk/run` | admin (tous) · coach (ses clients actifs) · `run` : admin seul |
+| AI Coach | `GET /ai-coach/status` (→ `{enabled, model}`) · `POST /ai-coach/chat` `{messages:[{role,content}], workspace}` → flux `text/event-stream` (`data: {"delta":…}` … `data: {"done":true}` ou `data: {"error":…}`) | connecté (données de soi uniquement) |
 
 Exemples :
 
@@ -404,10 +427,11 @@ Pour un téléphone réel : le backend écoute déjà sur toutes les interfaces 
 
 ```bash
 # Backend : tests unitaires et d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
+# AI Coach : faux serveur OpenRouter local, aucune vraie clé ni appel réseau
 cd backend
 .\mvnw.cmd test
 
-# Application : analyse + 18 tests unitaires / widgets
+# Application : analyse + 29 tests unitaires / widgets (dont 11 pour AI Coach, serveur simulé)
 cd app
 flutter analyze
 flutter test --exclude-tags integration

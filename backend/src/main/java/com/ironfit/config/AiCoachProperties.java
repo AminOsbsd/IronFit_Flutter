@@ -42,7 +42,10 @@ public record AiCoachProperties(
         if (rateLimit <= 0) rateLimit = 12;
     }
 
-    public boolean enabled() { return apiKey != null && !apiKey.isBlank(); }
+    /** Valeur d'exemple de .env.example : copiée telle quelle, elle ne doit pas activer AI Coach. */
+    static final String PLACEHOLDER_KEY = "sk-or-v1-your-key-here";
+
+    public boolean enabled() { return apiKey != null && !apiKey.isBlank() && !PLACEHOLDER_KEY.equals(apiKey.trim()); }
 
     /** Jamais la clé dans les journaux, même par accident (toString d'un record). */
     @Override

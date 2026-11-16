@@ -3,6 +3,7 @@ package com.ironfit.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ironfit.ai.CoachPrompt.Mode;
+import com.ironfit.config.AiCoachProperties;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,18 @@ class CoachPromptTest {
         assertThat(CoachPrompt.clip("abcdefghij", 5)).isEqualTo("abcd…");
         assertThat(CoachPrompt.clip(null, 5)).isEmpty();
     }
+
+    @Test
+    void laCleDExempleOuVideNActivePasLeCoachEtNApparaitJamaisDansToString() {
+        assertThat(props("").enabled()).isFalse();
+        assertThat(props("sk-or-v1-your-key-here").enabled()).isFalse();
+        AiCoachProperties real = props("sk-or-v1-secret");
+        assertThat(real.enabled()).isTrue();
+        assertThat(real.toString()).doesNotContain("secret");
+        assertThat(real.model()).isEqualTo(AiCoachProperties.DEFAULT_MODEL);
+    }
+
+    private static AiCoachProperties props(String key) { return new AiCoachProperties(key, null, null, null, null, 0, 0, 0, 0); }
 
     @Test
     void lesErreursOpenRouterDonnentDesMessagesClairsSansJamaisRenvoyer401() {
