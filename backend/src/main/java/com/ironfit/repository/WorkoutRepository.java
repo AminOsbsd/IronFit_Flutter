@@ -41,4 +41,14 @@ public interface WorkoutRepository extends JpaRepository<Workout, Long> {
             select count(w) from Workout w
             where w.program.coach.id = :coachId and w.coachComment is null and w.user.id in :clientIds""")
     long countToReview(@Param("coachId") Long coachId, @Param("clientIds") Collection<Long> clientIds);
+
+    // ---- Rétention : agrégats par membre (une requête pour tous, pas une par membre) ----
+
+    /** [id du membre, date de sa dernière séance] */
+    @Query("select w.user.id, max(w.doneOn) from Workout w where w.user.id in :ids group by w.user.id")
+    List<Object[]> lastDoneByUser(@Param("ids") Collection<Long> ids);
+
+    /** [id du membre, nombre de séances depuis la date donnée] */
+    @Query("select w.user.id, count(w) from Workout w where w.user.id in :ids and w.doneOn >= :from group by w.user.id")
+    List<Object[]> countSinceByUser(@Param("ids") Collection<Long> ids, @Param("from") LocalDate from);
 }

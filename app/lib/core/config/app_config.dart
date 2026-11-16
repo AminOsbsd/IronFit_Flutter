@@ -10,6 +10,16 @@ class AppConfig {
   /// Délai maximal d'une requête réseau.
   static const requestTimeout = Duration(seconds: 15);
 
+  /// AI Coach : délai pour recevoir le début de la réponse (le serveur attend lui-même jusqu'à 30 s le modèle d'IA).
+  static const aiCoachTimeout = Duration(seconds: 45);
+
+  /// AI Coach : délai maximal sans nouveau morceau de texte pendant le streaming.
+  static const aiCoachIdleTimeout = Duration(seconds: 60);
+
+  /// AI Coach : longueur maximale d'un message et nombre de messages d'historique envoyés (limites du serveur).
+  static const aiCoachMaxChars = 2000;
+  static const aiCoachMaxHistory = 20;
+
   static const logo = 'assets/images/ironfit_logo.png';
   static const logoTransparent = 'assets/images/ironfit_logo_transparent.png';
 

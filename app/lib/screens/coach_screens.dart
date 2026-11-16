@@ -9,6 +9,7 @@ import 'member_screens.dart';
 import 'notifications_screen.dart';
 import 'planning_screen.dart';
 import 'program_screens.dart';
+import 'risk_screen.dart';
 
 // Espace coach : tableau de bord, clients, suivi d'un client.
 // Le serveur limite toutes ces données aux clients dont la relation de coaching est active.
@@ -90,6 +91,16 @@ class _CoachHomeState extends State<CoachHome> {
                 kpiCard(context, Icons.local_fire_department, 'Séances clients (7 j)', '${st['workouts_7d'] ?? 0}', color: AppColors.success),
                 kpiCard(context, Icons.rate_review, 'Séances à commenter', '${st['to_review'] ?? 0}', color: AppColors.ember),
               ]),
+            const SizedBox(height: 4),
+            Card(
+              child: ListTile(
+                leading: const IconBadge(Icons.trending_down_rounded, color: AppColors.danger),
+                title: const Text('Membres à risque d\'abandon'),
+                subtitle: const Text('Clients qui s\'éloignent : voir pourquoi et les relancer'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RiskPage())),
+              ),
+            ),
             if (pending.isNotEmpty) ...[
               sectionTitle(context, 'Demandes de suivi'),
               for (final l in pending)

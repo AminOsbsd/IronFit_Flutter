@@ -67,4 +67,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("select u from User u where u.id in :ids and u.subEnd between :from and :to order by u.subEnd")
     List<User> findExpiringAmong(@Param("ids") Collection<Long> ids, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    List<User> findByRoleInAndActiveTrue(Collection<Role> roles);
 }

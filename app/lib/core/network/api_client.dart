@@ -115,6 +115,40 @@ class Api {
     return data;
   }
 
+  /// POST dont la réponse arrive en flux (AI Coach, text/event-stream) : renvoie le texte reçu morceau par morceau.
+  /// Mêmes erreurs que [call] (serveur injoignable, message « error » du serveur, 401 → déconnexion).
+  /// [timeout] borne l'attente du début de la réponse, [idle] le silence entre deux morceaux.
+  static Future<Stream<String>> postStream(String path, Map<String, dynamic> body, {required Duration timeout, required Duration idle}) async {
+    final req = http.Request('POST', Uri.parse('$base/$path'))
+      ..headers.addAll({
+        'Content-Type': 'application/json',
+        // JSON aussi : les erreurs (429, 503…) arrivent au format JSON habituel
+        'Accept': 'text/event-stream, application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      })
+      ..body = jsonEncode(body);
+    http.StreamedResponse r;
+    try {
+      r = await client.send(req).timeout(timeout);
+    } on TimeoutException {
+      throw ApiException('Le serveur ne répond pas ($base). Vérifiez votre connexion.');
+    } catch (_) {
+      throw ApiException('Serveur injoignable ($base). Vérifiez l\'adresse et que le backend Spring Boot est lancé.');
+    }
+    if (r.statusCode >= 400) {
+      dynamic data;
+      try {
+        data = jsonDecode(await r.stream.bytesToString());
+      } catch (_) {}
+      if (r.statusCode == 401 && token != null) await logout();
+      throw ApiException((data is Map ? data['error'] : null) ?? 'Erreur ${r.statusCode}', r.statusCode);
+    }
+    return r.stream.transform(utf8.decoder).timeout(idle, onTimeout: (sink) {
+      sink.addError(ApiException('La réponse s\'est interrompue (délai dépassé). Réessayez.'));
+      sink.close();
+    });
+  }
+
   static Future<List<Map<String, dynamic>>> list(String endpoint) async =>
       ((await call('GET', endpoint)) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 

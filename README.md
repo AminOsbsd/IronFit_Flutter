@@ -43,6 +43,9 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | Programmes personnels ou écrits par le coach | Séances réalisées par ses clients et **commentaires** | Tarifs, promotions, boutique, matériel, annonces, paiements |
 | Journal de séances, courbe de poids, présences, paiements | Mesures et présences de ses clients ; planning et pointage de ses cours | Mesures, présences et planning de toute la salle |
 | Notifications (abonnement, coaching, programme, commentaire, annonce, cours annulé) | Notifications (nouvelle demande, séance terminée…) | Notifications |
+| **AI Coach** : conseils personnalisés à partir de ses programmes, séances, mesures et réservations | **AI Coach** : aide à la programmation et au suivi des clients (chiffres agrégés) | **AI Coach** : aide à la gestion de la salle (chiffres agrégés) |
+
+**AI Coach** : bouton flottant « AI Coach » en bas à droite de tous les onglets principaux, qui ouvre un chat (panneau latéral sur grand écran, feuille plein écran sur téléphone). Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
 
 **Interface** : identité visuelle noir / ambre / blanc tirée du logo, thèmes clair et sombre (suivant le système), logo officiel en grand sur l'écran de connexion et en filigrane discret sur les autres écrans, mise en page adaptée au téléphone (barre de navigation en bas) et au grand écran (rail latéral avec le logo dès 900 px).
 
@@ -93,6 +96,7 @@ IronFit_Flutter/
 │  ├─ pom.xml
 │  ├─ mvnw, mvnw.cmd, .mvn/        Maven Wrapper (Maven 3.9.16 téléchargé au premier lancement)
 │  ├─ .env.example                 Modèle de configuration locale (copier en .env)
+│  ├─ knowledge/coach-knowledge.md Base de connaissances d'AI Coach (horaires, règles, FAQ…), à compléter
 │  ├─ start.bat                    mvnw spring-boot:run
 │  ├─ tools/sqlite-to-mysql.js     Migration unique : ancienne base SQLite → script SQL MySQL
 │  ├─ data/                        (non versionné) clé JWT générée, ancienne base SQLite conservée
@@ -109,7 +113,8 @@ IronFit_Flutter/
 │     │  ├─ dto/                   Requêtes / réponses par domaine
 │     │  ├─ security/              JwtService, JwtAuthFilter, PasswordHasher, RateLimiter, CurrentUser…
 │     │  ├─ config/                SecurityConfig, JacksonConfig, AppProperties, DataInitializer, XamppMariaDbDialect
-│     │  └─ exception/             ApiException, ErrorResponse, GlobalExceptionHandler
+│     │  ├─ exception/             ApiException, ErrorResponse, GlobalExceptionHandler
+│     │  └─ ai/                    AI Coach : OpenRouterClient (proxy SSE), CoachPrompt (prompt système), KnowledgeBase
 │     ├─ main/resources/application.properties
 │     └─ test/                     31 tests d'intégration (MockMvc + H2 en mode MySQL)
 └─ app/                            Application Flutter
@@ -122,7 +127,8 @@ IronFit_Flutter/
    │  ├─ core/theme/               app_theme.dart, brand.dart
    │  ├─ models/                   app_user.dart, module.dart (modules CRUD déclaratifs)
    │  ├─ services/                 auth, user, coach, program, planning, admin, catalog, notification
-   │  ├─ widgets/                  common_widgets.dart (cartes, indicateurs, graphiques…), form_dialog.dart
+   │  ├─ widgets/                  common_widgets.dart (cartes, indicateurs, graphiques…), form_dialog.dart,
+   │  │                            ai_coach.dart (bouton flottant + panneau de chat AI Coach)
    │  └─ screens/                  auth, home_shell, member, coaches, program, coach, admin, planning,
    │                               crud, notifications
    ├─ test/                        Tests unitaires, widgets et intégration avec le backend
@@ -250,6 +256,32 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 | `ADMIN_PASSWORD` | `admin123` | Compte `admin` créé sur base vide |
 | `SEED_DEMO` | `true` | Données de démonstration sur base vide |
 | `SHOW_RESET_CODE` | `true` | Code « mot de passe oublié » renvoyé à l'app (démo) |
+| `OPENROUTER_API_KEY` | *(vide)* | Clé OpenRouter d'AI Coach (serveur uniquement) ; vide = AI Coach désactivé |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Modèle OpenRouter utilisé par AI Coach |
+| `OPENROUTER_FALLBACK_MODELS` | *(vide)* | Modèles de secours (virgules), essayés si le principal est saturé — conseillé avec les modèles gratuits |
+| `OPENROUTER_REASONING` | `off` | « Réflexion » du modèle : `off` (le plus rapide), `low`, `medium`, `high`, `default` |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API compatible OpenAI (modifiable pour un proxy ou des tests) |
+| `OPENROUTER_SITE_URL` / `OPENROUTER_APP_TITLE` | URL du dépôt / `IronFit` | En-têtes `HTTP-Referer` et `X-Title` recommandés par OpenRouter |
+| `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS` | `30` / `90` | Attente du début de la réponse / durée maximale d'une réponse |
+| `AI_MAX_TOKENS` | `700` | Longueur maximale d'une réponse |
+| `AI_RATE_LIMIT` | `12` | Messages AI Coach par minute et par utilisateur |
+| `AI_KNOWLEDGE_FILE` | `knowledge/coach-knowledge.md` | Base de connaissances de la salle (relative au dossier `backend/`) ; vide = aucune |
+
+### 9.1 AI Coach (OpenRouter)
+
+1. Créer une clé sur [openrouter.ai/keys](https://openrouter.ai/keys) (et ajouter un peu de crédit).
+2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)). **Gratuit** (testé en novembre 2026) : `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free` avec `OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free` — premier mot en ~0,4 s ; limite de 50 requêtes/jour sur un compte sans crédit, modèles parfois saturés (d'où les secours).
+3. Redémarrer le backend, ouvrir l'application, cliquer sur **AI Coach** (en bas à droite).
+
+Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
+
+**Base de connaissances** : en plus des données du membre, chaque réponse reçoit :
+- les **données vivantes de la salle** lues en base (formules et tarifs, planning hebdomadaire, offres en cours, coachs et spécialités) : rien à recopier ;
+- le fichier **`backend/knowledge/coach-knowledge.md`**, à compléter par la salle (horaires, adresse, règlement, équipements, FAQ, consignes d'entraînement maison). Il est relu automatiquement quand il change (sans redémarrage), limité à 12 000 caractères. Une ligne contenant « À COMPLÉTER » est transmise comme « information inconnue » : AI Coach répond qu'il ne sait pas et renvoie vers l'accueil au lieu d'inventer (vérifié avec le modèle gratuit, qui inventait les horaires du dimanche sans cette mention).
+
+Le prompt place d'abord ce qui change rarement (règles, base de connaissances, données de la salle) puis les données du membre, ce qui permet aux fournisseurs qui le proposent de mettre ce début en cache.
+
+> La clé OpenRouter ne doit jamais être mise dans l'application Flutter ni dans un fichier versionné.
 
 ---
 
@@ -270,7 +302,7 @@ Le serveur répond sur `http://localhost:8080/api`. Vérification :
 curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d "{\"login\":\"admin\",\"password\":\"admin123\"}"
 ```
 
-Comptes disponibles : ceux de votre ancienne base (migrés), ou, sur une base neuve avec `SEED_DEMO=true` : `admin` / `admin123`, `sami` / `1234` (coach), `leila` / `1234` (**coach et membre abonnée**), `youssef` / `1234`, `amira` / `1234`.
+Comptes disponibles : ceux de votre ancienne base (migrés), ou, sur une base neuve avec `SEED_DEMO=true` : `admin` / `admin123`, `sami` / `1234` (coach), `leila` / `1234` (**coach et membre abonnée**), `youssef` / `1234`, `amira` / `1234`. Les données de démonstration couvrent 4 semaines (séances, commentaires du coach, mesures, présences, réservations) pour que la progression et AI Coach aient de la matière ; les informations de la salle dans `backend/knowledge/coach-knowledge.md` sont **fictives** (projet scolaire).
 
 ---
 
@@ -316,6 +348,8 @@ Codes : 400 (validation / JSON), 401 (non connecté, session expirée ou compte 
 | Données membre | `GET /payments\|measures\|checkins?member_id=&scope=clients` ; écriture paiements : admin ; mesures : admin, soi, son coach ; présences : admin, son coach | |
 | Notifications | `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` | connecté |
 | Statistiques | `GET /stats` | admin (global) · coach (ses clients et cours) |
+| Membres à risque | `GET /risk[?all=true]` · `POST /risk/{memberId}/remind` · `POST /risk/run` | admin (tous) · coach (ses clients actifs) · `run` : admin seul |
+| AI Coach | `GET /ai-coach/status` (→ `{enabled, model}`) · `POST /ai-coach/chat` `{messages:[{role,content}], workspace}` → flux `text/event-stream` (`data: {"delta":…}` … `data: {"done":true}` ou `data: {"error":…}`) | connecté (données de soi uniquement) |
 
 Exemples :
 
@@ -327,6 +361,38 @@ curl -s localhost:8080/api/coaching/clients -H "Authorization: Bearer $TOKEN"
 curl -s -X POST localhost:8080/api/programs -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"title":"Gainage","goal":"Tonus","client_id":4}'
 curl -s "localhost:8080/api/members?q=karray&limit=20" -H "Authorization: Bearer $TOKEN"
+```
+
+### Membres à risque d'abandon (rétention)
+
+Chaque membre reçoit un **score de risque de 0 à 100**, calculé par le serveur (`retention/ChurnScorer.java`, classe pure et testée) à partir de trois signaux déjà présents en base :
+
+| Signal | Points | Règle |
+|---|---|---|
+| Inactivité | 0 à 50 | jours depuis la dernière séance ou présence : 0 point jusqu'à 3 jours, 50 points à 21 jours |
+| Régularité | 0 à 25 | séances + présences sur 28 jours : 0 → 25 pts · 1 à 3 → 15 pts · 4 à 7 → 5 pts (non évaluée les 14 premiers jours du compte) |
+| Abonnement | 0 à 25 | expiré → 25 pts · expire dans ≤ 7 jours → 20 pts · ≤ 14 jours → 10 pts |
+
+Niveaux : **élevé** ≥ 60 · **moyen** ≥ 35 · faible en dessous. Chaque score est accompagné de ses explications (`reasons`).
+
+- **Analyse automatique** : `RetentionJob` (`@Scheduled`, tous les jours à 8 h, réglable avec `RETENTION_CRON`, désactivable avec `RETENTION_ENABLED=false`). Pour chaque membre à risque **élevé** dont l'abonnement n'a pas expiré depuis plus de 30 jours et qui n'a pas été relancé depuis 7 jours : notification au membre, e-mail au membre, notification à son ou ses coachs. Chaque relance est enregistrée dans la table `retention_alerts` (anti-spam et historique).
+- **Relance manuelle** : bouton « Relancer » (coach de ce membre ou admin), une par membre et par jour.
+- **E-mails** : facultatifs. Sans `spring.mail.host`, rien n'est envoyé et seul le message est journalisé. Pour tester en local avec MailHog ou Mailpit (port SMTP 1025), ajouter dans `backend/.env` : `spring.mail.host=localhost` et `spring.mail.port=1025`. L'expéditeur se règle avec `MAIL_FROM`. **Toutes les notifications de l'application** (abonnement, coaching, programmes, annonces…) sont aussi envoyées par e-mail aux comptes ayant une vraie adresse (les adresses factices `@ironfit.local` sont ignorées) ; `NOTIFY_EMAIL=false` désactive cette copie.
+- **Écrans** : Espace coach → Accueil → « Membres à risque d'abandon » ; Administration → « Membres à risque » (bouton ▶ pour lancer l'analyse tout de suite).
+
+Démonstration (les données de démo sont toutes récentes, personne n'est à risque au départ) : faire « décrocher » Youssef dans phpMyAdmin, puis ouvrir l'écran ou lancer l'analyse.
+
+```sql
+UPDATE workouts SET done_on = CURDATE() - INTERVAL 20 DAY WHERE user_id = (SELECT id FROM users WHERE login = 'youssef');
+UPDATE checkins SET checkin_on = CURDATE() - INTERVAL 25 DAY WHERE member_id = (SELECT id FROM users WHERE login = 'youssef');
+UPDATE users SET sub_end = CURDATE() + INTERVAL 3 DAY WHERE login = 'youssef';
+```
+
+```bash
+# connecté en coach (sami) : la liste, puis relance
+curl -s localhost:8080/api/risk -H "Authorization: Bearer $TOKEN"
+# connecté en admin : lancer l'analyse automatique maintenant
+curl -s -X POST localhost:8080/api/risk/run -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ---
@@ -370,11 +436,12 @@ Pour un téléphone réel : le backend écoute déjà sur toutes les interfaces 
 ## 15. Tests et compilation
 
 ```bash
-# Backend : 31 tests d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
+# Backend : tests unitaires et d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
+# AI Coach : faux serveur OpenRouter local, aucune vraie clé ni appel réseau
 cd backend
 .\mvnw.cmd test
 
-# Application : analyse + 18 tests unitaires / widgets
+# Application : analyse + 30 tests unitaires / widgets (dont 12 pour AI Coach, serveur simulé)
 cd app
 flutter analyze
 flutter test --exclude-tags integration

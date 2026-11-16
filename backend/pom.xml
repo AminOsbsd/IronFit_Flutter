@@ -39,6 +39,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
     </dependency>
+    <!-- E-mails (relances) : inactif tant que spring.mail.host n'est pas défini -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
 
     <!-- MySQL (et MariaDB de XAMPP, compatible protocole MySQL) -->
     <dependency>
