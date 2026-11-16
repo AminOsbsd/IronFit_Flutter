@@ -148,7 +148,7 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 | Build | `flutter build web` / `windows` / `apk --release`; `./mvnw package` → `target/ironfit-backend-3.0.0.jar` |
 | Deploy | **Not determined from code.** README §18 gives production advice (TLS reverse proxy, strong secrets, `DDL_AUTO=validate`) but there is no deployment tooling. |
 
-Demo accounts on a fresh database with `SEED_DEMO=true`: `admin`/`admin123`, `sami`/`1234` (coach), `leila`/`1234` (coach + subscribed member), `youssef`/`1234`, `amira`/`1234`.
+Demo accounts on a fresh database with `SEED_DEMO=true`: `admin`/`admin123`, `sami`/`1234` (coach), `leila`/`1234` (coach + subscribed member), `youssef`/`1234`, `amira`/`1234`. The demo data includes four weeks of history: Youssef's strength program with 8 workouts, coach comments and 4 measurements; Amira's personal fitness program with workouts and measurements; Leila's mobility routine; check-ins, class bookings, shop items and equipment. `backend/knowledge/coach-knowledge.md` holds **fictional** gym details (address, hours, rules, FAQ) for this school project.
 
 ### Running the AI Coach
 1. Create a key at https://openrouter.ai/keys.
@@ -490,7 +490,7 @@ No new dependencies were needed. The backend uses the JDK `HttpClient` and the e
 2. **Sending a message.** On send (button, suggestion chip, or Enter; Shift+Enter adds a new line), `AiCoachChat` appends the user message and goes to `waiting`, which shows the animated typing indicator.
 3. **Request from the app.** `AiCoachService.reply` POSTs the last 20 messages plus `workspace` (`coach` when a coach is in "Espace coach") through `Api.postStream`, with the JWT and `Accept: text/event-stream, application/json`.
 4. **Context building.** The backend authenticates, applies the per-user rate limit and validates the body. `AiCoachServiceImpl.prepare` then builds the facts for the current mode:
-   - **Member mode:** subscription status and plan; active coach (first name + specialty); up to 3 active programs with up to 15 exercises each; the 8 latest workouts (duration, RPE, notes, coach comment); 28-day workout and check-in counts; days since the last workout; the 6 latest measurements; booked weekly classes.
+   - **Member mode:** subscription status and plan; active coach (first name + specialty); up to 3 active programs with up to 15 exercises each; the 8 latest workouts (duration, RPE, notes, coach comment); 28-day workout and check-in counts; days since the last workout; the 6 latest measurements; booked weekly classes; plus **pre-computed summaries** (date range, average RPE, sessions at RPE 8+, average duration, weight and body-fat change), because small models miscount lists.
    - **Coach mode:** active clients, pending requests, active programs, sessions logged in the last 7 days, sessions awaiting comments, classes taught.
    - **Admin mode:** member, coach and subscription counts; subscriptions expiring within 7 days; coaching counts; workouts in the last 7 days; check-ins today; number of classes.
 
@@ -533,7 +533,7 @@ Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightn
   - The `gemma-4` free models were rate-limited upstream; the fallback chain answered with Nemotron in the same request.
   - Member questions were answered in French with the user's real data in 1–4 s.
   - Knowledge base: prices, schedule and offers were answered correctly from live data (1.7 s). Before the "unknown" marking, the model **invented** Sunday opening hours; after it, it said it didn't know and pointed to the front desk (0.8 s).
-- **Not verified:** a run against MySQL/MariaDB.
+- **MySQL (XAMPP MariaDB 10.4):** on first start the backend created `ironfit_db` and loaded the demo data (5 accounts, 13 workouts, 7 measurements, 3 bookings, 3 programs with 11 exercises). AI Coach answered from it with the real free model. The progress summary's arithmetic was wrong until the server started sending pre-computed totals (weight −1.9 kg, body fat −1.3 points, average RPE 7.4, 3 hard sessions); after that the numbers were right.
 
 ### Limitations
 - The conversation is not persisted: it is lost on reload, logout or app restart.

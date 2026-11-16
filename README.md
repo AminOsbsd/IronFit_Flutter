@@ -302,7 +302,7 @@ Le serveur répond sur `http://localhost:8080/api`. Vérification :
 curl -X POST http://localhost:8080/api/login -H "Content-Type: application/json" -d "{\"login\":\"admin\",\"password\":\"admin123\"}"
 ```
 
-Comptes disponibles : ceux de votre ancienne base (migrés), ou, sur une base neuve avec `SEED_DEMO=true` : `admin` / `admin123`, `sami` / `1234` (coach), `leila` / `1234` (**coach et membre abonnée**), `youssef` / `1234`, `amira` / `1234`.
+Comptes disponibles : ceux de votre ancienne base (migrés), ou, sur une base neuve avec `SEED_DEMO=true` : `admin` / `admin123`, `sami` / `1234` (coach), `leila` / `1234` (**coach et membre abonnée**), `youssef` / `1234`, `amira` / `1234`. Les données de démonstration couvrent 4 semaines (séances, commentaires du coach, mesures, présences, réservations) pour que la progression et AI Coach aient de la matière ; les informations de la salle dans `backend/knowledge/coach-knowledge.md` sont **fictives** (projet scolaire).
 
 ---
 
