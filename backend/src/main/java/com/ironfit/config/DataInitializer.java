@@ -37,11 +37,13 @@ public class DataInitializer implements ApplicationRunner {
     private final ExerciseRepository exercises;
     private final WorkoutRepository workouts;
     private final NotificationRepository notifications;
+    private final BookingRepository bookings;
 
     public DataInitializer(AppProperties props, PasswordEncoder encoder, UserRepository users, PlanRepository plans, PromoRepository promos,
                            ClassSessionRepository classes, PaymentRepository payments, EquipmentRepository equipment, ProductRepository products,
                            AnnouncementRepository announcements, MeasureRepository measures, CheckinRepository checkins, CoachClientRepository links,
-                           ProgramRepository programs, ExerciseRepository exercises, WorkoutRepository workouts, NotificationRepository notifications) {
+                           ProgramRepository programs, ExerciseRepository exercises, WorkoutRepository workouts, NotificationRepository notifications,
+                           BookingRepository bookings) {
         this.props = props;
         this.encoder = encoder;
         this.users = users;
@@ -59,6 +61,7 @@ public class DataInitializer implements ApplicationRunner {
         this.exercises = exercises;
         this.workouts = workouts;
         this.notifications = notifications;
+        this.bookings = bookings;
     }
 
     @Override
@@ -110,6 +113,7 @@ public class DataInitializer implements ApplicationRunner {
 
         Object[][] cls = {{0, "18:00", "Musculation", sami, 15}, {1, "19:00", "Yoga", leila, 12}, {2, "18:30", "CrossFit", sami, 10},
                 {3, "19:00", "Pilates", leila, 12}, {4, "17:00", "Cardio HIIT", sami, 20}, {5, "10:00", "Stretching", leila, 15}};
+        java.util.Map<String, ClassSession> byTitle = new java.util.HashMap<>();
         for (Object[] c : cls) {
             ClassSession s = new ClassSession();
             s.setDay((Integer) c[0]);
@@ -117,7 +121,7 @@ public class DataInitializer implements ApplicationRunner {
             s.setTitle((String) c[2]);
             s.setCoach((User) c[3]);
             s.setSpots((Integer) c[4]);
-            classes.save(s);
+            byTitle.put(s.getTitle(), classes.save(s));
         }
 
         promo("Rentrée sportive", "Sur l’abonnement trimestriel", 20, t.plusDays(30));
@@ -127,7 +131,8 @@ public class DataInitializer implements ApplicationRunner {
         payment(amira, 160, "Carte", t.minusDays(85), "Abonnement Trimestriel");
         payment(leila, 60, "Carte", t.minusDays(15), "Abonnement Mensuel");
 
-        for (Object[] e : new Object[][]{{"Tapis de course", "Cardio", 6, "OK"}, {"Banc de musculation", "Musculation", 8, "OK"}, {"Vélo elliptique", "Cardio", 4, "Maintenance"}}) {
+        for (Object[] e : new Object[][]{{"Tapis de course", "Cardio", 6, "OK"}, {"Banc de musculation", "Musculation", 8, "OK"}, {"Vélo elliptique", "Cardio", 4, "Maintenance"},
+                {"Rack à squat", "Musculation", 3, "OK"}, {"Haltères 2 à 40 kg", "Poids libres", 1, "OK"}, {"Vélo de biking", "Cardio", 12, "OK"}}) {
             Equipment x = new Equipment();
             x.setName((String) e[0]);
             x.setCategory((String) e[1]);
@@ -135,7 +140,8 @@ public class DataInitializer implements ApplicationRunner {
             x.setStatus((String) e[3]);
             equipment.save(x);
         }
-        for (Object[] p : new Object[][]{{"Whey protéine 1kg", "Nutrition", 75, 20}, {"Gourde 750ml", "Accessoires", 12, 40}, {"Serviette sport", "Accessoires", 8, 3}}) {
+        for (Object[] p : new Object[][]{{"Whey protéine 1kg", "Nutrition", 75, 20}, {"Gourde 750ml", "Accessoires", 12, 40}, {"Serviette sport", "Accessoires", 8, 3},
+                {"Barre protéinée", "Nutrition", 4, 60}, {"Gants de musculation", "Accessoires", 25, 15}}) {
             Product x = new Product();
             x.setName((String) p[0]);
             x.setCategory((String) p[1]);
@@ -156,11 +162,7 @@ public class DataInitializer implements ApplicationRunner {
         measure(youssef, t.minusDays(1), 80.6, 18.2, "Bilan mensuel");
         measure(leila, t.minusDays(10), 58.2, 21.0, "Bilan personnel");
 
-        Checkin k = new Checkin();
-        k.setMember(youssef);
-        k.setCheckinOn(t.minusDays(3));
-        k.setNote("Musculation");
-        checkins.save(k);
+        checkin(youssef, t.minusDays(3), "Musculation");
 
         // Coaching : Sami suit Youssef et Leila ; Amira a une demande en attente auprès de Sami
         link(sami, youssef, "active");
@@ -172,20 +174,74 @@ public class DataInitializer implements ApplicationRunner {
                 {"B", "Soulevé de terre", 3, "5", "90 kg", "3 min"}, {"B", "Tractions", 3, "max", null, "90 s"}};
         for (int i = 0; i < ex.length; i++) exercise(prog, (String) ex[i][0], (String) ex[i][1], (Integer) ex[i][2], (String) ex[i][3], (String) ex[i][4], (String) ex[i][5], i);
 
-        Workout w = new Workout();
-        w.setUser(youssef);
-        w.setProgram(prog);
-        w.setDoneOn(t.minusDays(2));
-        w.setDuration(65);
-        w.setRpe(7);
-        w.setNotes("Séance A, bonnes sensations");
-        w.setCoachComment("Bravo ! On augmente le squat de 2,5 kg la prochaine fois.");
-        workouts.save(w);
+        workout(youssef, prog, t.minusDays(2), 65, 7, "Séance A, bonnes sensations", "Bravo ! On augmente le squat de 2,5 kg la prochaine fois.");
 
         Program perso = program(leila, null, "Mobilité du matin", "Souplesse", null);
         exercise(perso, null, "Salutation au soleil", 3, "5", null, null, 0);
 
+        seedHistory(t, youssef, amira, leila, prog, perso, byTitle);
+
         notifications.save(new Notification(youssef, "Nouveau commentaire de votre coach", "Sami a commenté votre séance."));
+    }
+
+    /**
+     * Historique de démonstration (4 semaines) pour que les écrans de progression et AI Coach aient de la matière.
+     * Volontairement limité aux séances, mesures, présences et réservations : aucun compte, suivi ou programme
+     * supplémentaire (les tests d'intégration comptent ces éléments). Les cours réservés sont ceux de Leila.
+     */
+    private void seedHistory(LocalDate t, User youssef, User amira, User leila, Program prog, Program perso, java.util.Map<String, ClassSession> byTitle) {
+        // Youssef : programme de force de Sami, séances A / B deux fois par semaine
+        workout(youssef, prog, t.minusDays(26), 60, 7, "Séance A, première séance du programme", "Bon début. Squat et développé couché propres, on garde ces charges.");
+        workout(youssef, prog, t.minusDays(23), 55, 8, "Séance B, tractions difficiles (4 répétitions)", null);
+        workout(youssef, prog, t.minusDays(19), 62, 7, "Séance A", null);
+        workout(youssef, prog, t.minusDays(16), 58, 8, "Séance B, soulevé de terre lourd en fin de séance", "Garde le dos neutre sur la dernière série, quitte à baisser de 5 kg.");
+        workout(youssef, prog, t.minusDays(12), 65, 7, "Séance A, squat 70 kg 4x8", null);
+        workout(youssef, prog, t.minusDays(9), 60, 7, "Séance B, 6 tractions sur la première série", "Belle progression aux tractions !");
+        workout(youssef, prog, t.minusDays(5), 63, 8, "Séance B, un peu fatigué (mauvaise nuit)", null);
+        measure(youssef, t.minusDays(21), 81.9, 19.2, "Bilan semaine 1");
+        checkin(youssef, t.minusDays(14), "Yoga");
+        checkin(youssef, t.minusDays(7), "Yoga");
+        bookings.save(new Booking(youssef, byTitle.get("Yoga")));
+        bookings.save(new Booking(youssef, byTitle.get("Stretching")));
+
+        // Amira : programme personnel de remise en forme (sa demande de suivi auprès de Sami est en attente)
+        Program fit = program(amira, null, "Remise en forme", "Perte de poids et cardio", "3 séances par semaine, 45 min max.");
+        Object[][] ex = {{"A", "Vélo d'appartement", 1, "20 min", null, null}, {"A", "Fentes avant", 3, "10 par jambe", null, "60 s"},
+                {"A", "Gainage planche", 3, "40 s", null, "45 s"}, {"A", "Rameur", 1, "10 min", null, null}};
+        for (int i = 0; i < ex.length; i++) exercise(fit, (String) ex[i][0], (String) ex[i][1], (Integer) ex[i][2], (String) ex[i][3], (String) ex[i][4], (String) ex[i][5], i);
+        workout(amira, fit, t.minusDays(11), 40, 6, "Reprise en douceur", null);
+        workout(amira, fit, t.minusDays(6), 45, 7, "Gainage difficile sur la dernière série", null);
+        workout(amira, fit, t.minusDays(3), 45, 7, "Plus facile que la semaine dernière", null);
+        measure(amira, t.minusDays(20), 68.0, 29.5, "Premier bilan");
+        measure(amira, t.minusDays(3), 67.1, 28.8, "Bilan 2 semaines");
+        checkin(amira, t.minusDays(4), "Pilates");
+        bookings.save(new Booking(amira, byTitle.get("Pilates")));
+
+        // Leila : sa routine personnelle de mobilité
+        exercise(perso, null, "Chat-vache", 2, "10", null, null, 1);
+        exercise(perso, null, "Fente avec rotation", 2, "6 par côté", null, null, 2);
+        workout(leila, perso, t.minusDays(6), 20, 4, "Routine du matin", null);
+        workout(leila, perso, t.minusDays(1), 20, 4, "Routine du matin, hanches plus souples", null);
+    }
+
+    private void workout(User u, Program p, LocalDate on, int minutes, int rpe, String notes, String coachComment) {
+        Workout w = new Workout();
+        w.setUser(u);
+        w.setProgram(p);
+        w.setDoneOn(on);
+        w.setDuration(minutes);
+        w.setRpe(rpe);
+        w.setNotes(notes);
+        w.setCoachComment(coachComment);
+        workouts.save(w);
+    }
+
+    private void checkin(User m, LocalDate on, String note) {
+        Checkin k = new Checkin();
+        k.setMember(m);
+        k.setCheckinOn(on);
+        k.setNote(note);
+        checkins.save(k);
     }
 
     private void promo(String title, String descr, int discount, LocalDate until) {
