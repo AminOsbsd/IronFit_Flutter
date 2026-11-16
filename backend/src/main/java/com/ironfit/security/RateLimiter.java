@@ -22,16 +22,24 @@ public class RateLimiter {
     public RateLimiter(AppProperties props) { this.max = props.rateLimit(); }
 
     public void check(HttpServletRequest req) {
+        if (limited(req.getRemoteAddr() + " " + req.getRequestURI(), max)) throw ApiException.tooManyRequests();
+    }
+
+    /** Variante à clé libre (ex. par utilisateur) et seuil propre, avec un message adapté (AI Coach). */
+    public void check(String key, int maxPerMinute, String message) {
+        if (limited(key, maxPerMinute)) throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, message);
+    }
+
+    private boolean limited(String key, int maxPerMinute) {
         long now = System.currentTimeMillis();
-        String key = req.getRemoteAddr() + " " + req.getRequestURI();
         Deque<Long> q = hits.computeIfAbsent(key, k -> new ArrayDeque<>());
         boolean limited;
         synchronized (q) {
             while (!q.isEmpty() && now - q.peekFirst() >= WINDOW_MS) q.pollFirst();
             q.addLast(now);
-            limited = q.size() > max;
+            limited = q.size() > maxPerMinute;
         }
         if (hits.size() > 10_000) hits.entrySet().removeIf(e -> e.getValue().isEmpty() || now - e.getValue().peekLast() >= WINDOW_MS);
-        if (limited) throw ApiException.tooManyRequests();
+        return limited;
     }
 }

@@ -1,0 +1,233 @@
+package com.ironfit.service.impl;
+
+import static com.ironfit.ai.CoachPrompt.clip;
+
+import com.ironfit.ai.CoachPrompt;
+import com.ironfit.ai.CoachPrompt.Mode;
+import com.ironfit.ai.OpenRouterClient.Message;
+import com.ironfit.dto.AiCoachDtos;
+import com.ironfit.dto.AiCoachDtos.ChatMessage;
+import com.ironfit.dto.AiCoachDtos.ChatRequest;
+import com.ironfit.entity.*;
+import com.ironfit.exception.ApiException;
+import com.ironfit.repository.*;
+import com.ironfit.security.CurrentUser;
+import com.ironfit.service.AccessService;
+import com.ironfit.service.AiCoachService;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class AiCoachServiceImpl implements AiCoachService {
+    private static final String[] DAYS = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    private static final int WINDOW_DAYS = 28;
+
+    private final UserRepository users;
+    private final ProgramRepository programs;
+    private final ExerciseRepository exercises;
+    private final WorkoutRepository workouts;
+    private final MeasureRepository measures;
+    private final CheckinRepository checkins;
+    private final BookingRepository bookings;
+    private final ClassSessionRepository classes;
+    private final CoachClientRepository links;
+
+    public AiCoachServiceImpl(UserRepository users, ProgramRepository programs, ExerciseRepository exercises, WorkoutRepository workouts,
+                              MeasureRepository measures, CheckinRepository checkins, BookingRepository bookings,
+                              ClassSessionRepository classes, CoachClientRepository links) {
+        this.users = users;
+        this.programs = programs;
+        this.exercises = exercises;
+        this.workouts = workouts;
+        this.measures = measures;
+        this.checkins = checkins;
+        this.bookings = bookings;
+        this.classes = classes;
+        this.links = links;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Message> prepare(CurrentUser me, ChatRequest request) {
+        List<ChatMessage> history = request.messages();
+        ChatMessage last = history.get(history.size() - 1);
+        if (!"user".equals(last.role())) throw ApiException.badRequest("Le dernier message doit venir de l'utilisateur");
+        for (ChatMessage m : history) {
+            if ("user".equals(m.role()) && m.content().length() > AiCoachDtos.MAX_MESSAGE_CHARS) {
+                throw ApiException.badRequest("Message trop long (" + AiCoachDtos.MAX_MESSAGE_CHARS + " caractères max.)");
+            }
+        }
+
+        User u = users.findById(me.id()).orElseThrow(() -> ApiException.unauthorized("Session expirée"));
+        LocalDate today = LocalDate.now();
+        Mode mode = me.isAdmin() ? Mode.ADMIN : (me.isCoach() && "coach".equals(request.workspace()) ? Mode.COACH : Mode.MEMBER);
+        List<String> facts = switch (mode) {
+            case ADMIN -> adminFacts(today);
+            case COACH -> coachFacts(u, today);
+            case MEMBER -> memberFacts(u, today);
+        };
+
+        List<Message> out = new ArrayList<>();
+        out.add(new Message("system", CoachPrompt.system(mode, firstName(u.getName()), today, facts)));
+        out.addAll(recent(history));
+        return out;
+    }
+
+    /** Les messages les plus récents qui tiennent dans le budget de caractères (le dernier est toujours gardé). */
+    static List<Message> recent(List<ChatMessage> history) {
+        Deque<Message> kept = new ArrayDeque<>();
+        int total = 0;
+        for (int i = history.size() - 1; i >= 0; i--) {
+            ChatMessage m = history.get(i);
+            total += m.content().length();
+            if (total > AiCoachDtos.MAX_HISTORY_CHARS && !kept.isEmpty()) break;
+            kept.addFirst(new Message(m.role(), m.content().trim()));
+        }
+        return new ArrayList<>(kept);
+    }
+
+    // ------------------------------------------------------------------ membre (ou coach dans « Mon entraînement »)
+
+    private List<String> memberFacts(User u, LocalDate today) {
+        List<String> f = new ArrayList<>();
+        Long id = u.getId();
+        f.add("Role: " + (u.isCoach() ? "coach, currently looking at their own personal training" : "gym member"));
+
+        String plan = u.getPlan() == null ? null : u.getPlan().getName();
+        if (u.getSubEnd() == null) f.add("Subscription: none yet (needed to book classes; see the \"Explorer\" tab for plans)");
+        else if (u.getSubEnd().isBefore(today)) f.add("Subscription: expired on " + u.getSubEnd() + (plan == null ? "" : " (plan: " + plan + ")"));
+        else f.add("Subscription: active until " + u.getSubEnd() + (plan == null ? "" : " (plan: " + plan + ")"));
+
+        List<String> coaches = links.findForClient(id).stream()
+                .filter(cc -> "active".equals(cc.getStatus()))
+                .map(cc -> firstName(cc.getCoach().getName()) + (cc.getCoach().getSpecialty() == null ? "" : " (" + clip(cc.getCoach().getSpecialty(), 60) + ")"))
+                .toList();
+        f.add(coaches.isEmpty() ? "Personal coach: none (they can request one from the \"Explorer\" tab > Coachs)" : "Personal coach: " + String.join(", ", coaches));
+
+        // Programmes actifs et leurs exercices
+        List<Program> active = programs.findPersonal(id).stream().filter(Program::isActive).limit(3).toList();
+        if (active.isEmpty()) f.add("Active training programs: none");
+        for (Program p : active) {
+            StringBuilder sb = new StringBuilder("Active program \"").append(clip(p.getTitle(), 80)).append('"');
+            sb.append(p.getCoach() == null ? " (personal)" : " (written by coach " + firstName(p.getCoach().getName()) + ")");
+            if (p.getGoal() != null && !p.getGoal().isBlank()) sb.append(", goal: ").append(clip(p.getGoal(), 120));
+            if (p.getNotes() != null && !p.getNotes().isBlank()) sb.append(", notes: ").append(clip(p.getNotes(), 200));
+            List<Exercise> items = exercises.findForProgram(p.getId());
+            if (!items.isEmpty()) {
+                sb.append(". Exercises: ");
+                StringJoiner j = new StringJoiner("; ");
+                items.stream().limit(15).forEach(e -> j.add(exercise(e)));
+                sb.append(j);
+                if (items.size() > 15) sb.append("; … (").append(items.size() - 15).append(" more)");
+            }
+            f.add(sb.toString());
+        }
+
+        // Séances réalisées
+        List<Workout> recentWorkouts = workouts.findForUser(id, null, null, PageRequest.of(0, 8));
+        long sessions28 = countFor(workouts.countSinceByUser(List.of(id), today.minusDays(WINDOW_DAYS)));
+        long checkins28 = countFor(checkins.countSinceByMember(List.of(id), today.minusDays(WINDOW_DAYS)));
+        f.add("Logged workouts in the last " + WINDOW_DAYS + " days: " + sessions28 + "; class check-ins in the last " + WINDOW_DAYS + " days: " + checkins28);
+        if (recentWorkouts.isEmpty()) f.add("Workout log: no session logged yet");
+        else {
+            LocalDate lastDone = recentWorkouts.get(0).getDoneOn();
+            f.add("Last logged workout: " + lastDone + " (" + ChronoUnit.DAYS.between(lastDone, today) + " days ago)");
+            for (Workout w : recentWorkouts) f.add("Workout " + workout(w));
+        }
+
+        // Mesures
+        List<Measure> ms = measures.search(false, List.of(id), null, PageRequest.of(0, 6));
+        if (ms.isEmpty()) f.add("Body measurements: none recorded (\"Mon espace\" > \"Ma progression\")");
+        for (Measure m : ms) {
+            StringBuilder sb = new StringBuilder("Measurement ").append(m.getMeasuredOn() == null ? "(no date)" : m.getMeasuredOn()).append(':');
+            if (m.getWeight() != null) sb.append(" weight ").append(num(m.getWeight())).append(" kg");
+            if (m.getBodyFat() != null) sb.append(", body fat ").append(num(m.getBodyFat())).append(" %");
+            if (m.getNote() != null && !m.getNote().isBlank()) sb.append(", note: ").append(clip(m.getNote(), 100));
+            f.add(sb.toString());
+        }
+
+        // Cours réservés
+        List<ClassSession> booked = classes.findAllById(bookings.classIdsBookedBy(id)).stream()
+                .sorted(Comparator.comparing((ClassSession c) -> c.getDay() == null ? 9 : c.getDay()).thenComparing(c -> String.valueOf(c.getTime())))
+                .limit(10).toList();
+        if (booked.isEmpty()) f.add("Booked weekly classes: none");
+        else {
+            StringJoiner j = new StringJoiner(", ");
+            for (ClassSession c : booked) j.add(clip(c.getTitle(), 60) + " on " + day(c.getDay()) + " at " + c.getTime());
+            f.add("Booked weekly classes: " + j);
+        }
+        return f;
+    }
+
+    // ------------------------------------------------------------------ coach (espace coach) : agrégats uniquement
+
+    private List<String> coachFacts(User u, LocalDate today) {
+        List<String> f = new ArrayList<>();
+        Long id = u.getId();
+        f.add("Role: coach" + (u.getSpecialty() == null ? "" : ", specialty: " + clip(u.getSpecialty(), 60)));
+        List<Long> clients = links.activeClientIds(id);
+        f.add("Active clients: " + clients.size());
+        f.add("Pending coaching requests: " + links.countByCoachIdAndStatus(id, "pending"));
+        f.add("Active programs written for clients: " + programs.countActiveForCoach(id));
+        if (!clients.isEmpty()) {
+            f.add("Client sessions logged on this coach's programs in the last 7 days: " + workouts.countForCoachSince(id, today.minusDays(7), clients));
+            f.add("Client sessions waiting for the coach's comment: " + workouts.countToReview(id, clients));
+        }
+        f.add("Weekly group classes taught: " + classes.countByCoachId(id));
+        return f;
+    }
+
+    // ------------------------------------------------------------------ administrateur : agrégats de la salle
+
+    private List<String> adminFacts(LocalDate today) {
+        List<String> f = new ArrayList<>();
+        f.add("Role: gym administrator");
+        f.add("Members (athletes and coaches): " + users.countByRoleIn(AccessService.MEMBER_ROLES) + ", of which coaches: " + users.countByRole(Role.COACH));
+        f.add("Members with an active subscription: " + users.countByRoleInAndSubEndGreaterThanEqual(AccessService.MEMBER_ROLES, today));
+        f.add("Subscriptions expiring within 7 days: " + users.findExpiring(AccessService.MEMBER_ROLES, today, today.plusDays(7)).size());
+        f.add("Pending coaching requests: " + links.countByStatus("pending") + "; active coaching relationships: " + links.countByStatus("active"));
+        f.add("Workouts logged in the last 7 days (whole gym): " + workouts.countByDoneOnGreaterThanEqual(today.minusDays(7)));
+        f.add("Check-ins today: " + checkins.countByCheckinOn(today));
+        f.add("Weekly group classes scheduled: " + classes.count());
+        return f;
+    }
+
+    // ------------------------------------------------------------------ mise en forme
+
+    private static String exercise(Exercise e) {
+        StringBuilder sb = new StringBuilder();
+        if (e.getDay() != null && !e.getDay().isBlank()) sb.append('[').append(clip(e.getDay(), 20)).append("] ");
+        sb.append(clip(e.getName(), 60));
+        if (e.getSets() != null || e.getReps() != null) sb.append(' ').append(e.getSets() == null ? "?" : e.getSets()).append('x').append(e.getReps() == null ? "?" : clip(e.getReps(), 20));
+        if (e.getLoad() != null && !e.getLoad().isBlank()) sb.append(" @ ").append(clip(e.getLoad(), 20));
+        if (e.getRest() != null && !e.getRest().isBlank()) sb.append(", rest ").append(clip(e.getRest(), 20));
+        return sb.toString();
+    }
+
+    private static String workout(Workout w) {
+        StringBuilder sb = new StringBuilder().append(w.getDoneOn());
+        if (w.getProgram() != null) sb.append(", program \"").append(clip(w.getProgram().getTitle(), 60)).append('"');
+        if (w.getDuration() != null) sb.append(", ").append(w.getDuration()).append(" min");
+        if (w.getRpe() != null) sb.append(", RPE ").append(w.getRpe());
+        if (w.getNotes() != null && !w.getNotes().isBlank()) sb.append(", member notes: ").append(clip(w.getNotes(), 150));
+        if (w.getCoachComment() != null && !w.getCoachComment().isBlank()) sb.append(", coach comment: ").append(clip(w.getCoachComment(), 150));
+        return sb.toString();
+    }
+
+    private static long countFor(List<Object[]> rows) {
+        return rows.isEmpty() ? 0 : ((Number) rows.get(0)[1]).longValue();
+    }
+
+    private static String day(Integer d) { return d == null || d < 0 || d > 6 ? "?" : DAYS[d]; }
+
+    private static String num(Double v) { return v == Math.rint(v) ? String.valueOf(v.longValue()) : String.valueOf(v); }
+
+    static String firstName(String name) {
+        if (name == null || name.isBlank()) return "";
+        return name.trim().split("\\s+")[0];
+    }
+}
