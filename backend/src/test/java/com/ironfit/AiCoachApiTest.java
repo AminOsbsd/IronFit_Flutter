@@ -156,6 +156,9 @@ class AiCoachApiTest extends ApiTestSupport {
         assertThat(system).contains("Horaires : 7 h – 21 h en semaine", "Adresse : UNKNOWN (not provided by the gym").doesNotContain("COMPLÉTER");
         assertThat(system).contains("Plan \"Mensuel\": 60 DT for 1 mois", "Weekly group class schedule", "Current offer \"Rentrée sportive\": 20 % off",
                 "Coaches (members can request one", "\"Amenez un ami\": FREE (100 % off)", "max capacity");
+        // Calculs faits par le serveur (données de démo de Youssef)
+        assertThat(system).contains("weight 82.5 kg on", "-> 80.6 kg on", "(change -1.9 kg)", "body fat 19.5 % -> 18.2 % (change -1.3 points)",
+                "average RPE 7.4", "sessions at RPE 8 or more: 3");
         assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Comment progresser au squat ?");
     }
 

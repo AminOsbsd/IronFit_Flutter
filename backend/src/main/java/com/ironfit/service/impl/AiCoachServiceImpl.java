@@ -192,6 +192,7 @@ public class AiCoachServiceImpl implements AiCoachService {
             LocalDate lastDone = recentWorkouts.get(0).getDoneOn();
             f.add("Last logged workout: " + lastDone + " (" + ChronoUnit.DAYS.between(lastDone, today) + " days ago)");
             for (Workout w : recentWorkouts) f.add("Workout " + workout(w));
+            f.add(workoutSummary(recentWorkouts));
         }
 
         // Mesures
@@ -204,6 +205,8 @@ public class AiCoachServiceImpl implements AiCoachService {
             if (m.getNote() != null && !m.getNote().isBlank()) sb.append(", note: ").append(clip(m.getNote(), 100));
             f.add(sb.toString());
         }
+        String trend = measureTrend(ms);
+        if (trend != null) f.add(trend);
 
         // Cours réservés
         List<ClassSession> booked = classes.findAllById(bookings.classIdsBookedBy(id)).stream()
@@ -271,6 +274,46 @@ public class AiCoachServiceImpl implements AiCoachService {
         if (w.getNotes() != null && !w.getNotes().isBlank()) sb.append(", member notes: ").append(clip(w.getNotes(), 150));
         if (w.getCoachComment() != null && !w.getCoachComment().isBlank()) sb.append(", coach comment: ").append(clip(w.getCoachComment(), 150));
         return sb.toString();
+    }
+
+    /**
+     * Calculs faits côté serveur : les petits modèles se trompent en additionnant des listes
+     * (vérifié : écarts de poids et nombre de séances difficiles faux sans ce résumé).
+     */
+    static String workoutSummary(List<Workout> ws) {
+        List<Integer> rpes = ws.stream().map(Workout::getRpe).filter(Objects::nonNull).toList();
+        List<Integer> minutes = ws.stream().map(Workout::getDuration).filter(Objects::nonNull).toList();
+        StringBuilder sb = new StringBuilder("PRE-COMPUTED summary of the ").append(ws.size()).append(" workouts listed above (use these numbers as is): ");
+        sb.append("from ").append(ws.get(ws.size() - 1).getDoneOn()).append(" to ").append(ws.get(0).getDoneOn());
+        if (!rpes.isEmpty()) {
+            sb.append(", average RPE ").append(String.format(Locale.ROOT, "%.1f", rpes.stream().mapToInt(Integer::intValue).average().orElse(0)));
+            sb.append(", sessions at RPE 8 or more: ").append(rpes.stream().filter(r -> r >= 8).count());
+        }
+        if (!minutes.isEmpty()) sb.append(", average duration ").append(Math.round(minutes.stream().mapToInt(Integer::intValue).average().orElse(0))).append(" min");
+        return sb.toString();
+    }
+
+    /** Évolution entre la plus ancienne et la plus récente mesure renseignée (poids, masse grasse). null si moins de 2 mesures. */
+    static String measureTrend(List<Measure> ms) {
+        List<Measure> dated = ms.stream().filter(m -> m.getMeasuredOn() != null).sorted(Comparator.comparing(Measure::getMeasuredOn)).toList();
+        List<String> parts = new ArrayList<>();
+        List<Measure> w = dated.stream().filter(m -> m.getWeight() != null).toList();
+        if (w.size() >= 2) {
+            Measure a = w.get(0), b = w.get(w.size() - 1);
+            parts.add("weight " + num(a.getWeight()) + " kg on " + a.getMeasuredOn() + " -> " + num(b.getWeight()) + " kg on " + b.getMeasuredOn()
+                    + " (change " + signed(b.getWeight() - a.getWeight()) + " kg)");
+        }
+        List<Measure> bf = dated.stream().filter(m -> m.getBodyFat() != null).toList();
+        if (bf.size() >= 2) {
+            Measure a = bf.get(0), b = bf.get(bf.size() - 1);
+            parts.add("body fat " + num(a.getBodyFat()) + " % -> " + num(b.getBodyFat()) + " % (change " + signed(b.getBodyFat() - a.getBodyFat()) + " points)");
+        }
+        return parts.isEmpty() ? null : "PRE-COMPUTED measurement trend (use these numbers as is): " + String.join("; ", parts);
+    }
+
+    private static String signed(double v) {
+        double r = Math.round(v * 10) / 10.0;
+        return (r > 0 ? "+" : "") + num(r);
     }
 
     private static long countFor(List<Object[]> rows) {
