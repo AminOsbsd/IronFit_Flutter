@@ -1,5 +1,7 @@
 package com.ironfit.config;
 
+import java.util.List;
+import java.util.Locale;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -8,6 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param apiKey             clé OpenRouter (OPENROUTER_API_KEY) ; vide = AI Coach désactivé (503)
  * @param model              modèle OpenRouter (OPENROUTER_MODEL)
+ * @param fallbackModels     modèles de secours, essayés dans l'ordre si le premier échoue ou est saturé (OPENROUTER_FALLBACK_MODELS)
+ * @param reasoning          « off » (défaut : réponse directe, plus rapide), « low », « medium », « high » ou « default » (choix du modèle)
  * @param baseUrl            adresse de l'API compatible OpenAI (OPENROUTER_BASE_URL, modifiable pour les tests)
  * @param siteUrl            en-tête HTTP-Referer recommandé par OpenRouter
  * @param appTitle           en-tête X-Title recommandé par OpenRouter
@@ -20,6 +24,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AiCoachProperties(
         String apiKey,
         String model,
+        List<String> fallbackModels,
+        String reasoning,
         String baseUrl,
         String siteUrl,
         String appTitle,
@@ -32,6 +38,11 @@ public record AiCoachProperties(
 
     public AiCoachProperties {
         if (model == null || model.isBlank()) model = DEFAULT_MODEL;
+        model = model.trim();
+        fallbackModels = fallbackModels == null ? List.of()
+                : fallbackModels.stream().map(String::trim).filter(m -> !m.isEmpty()).distinct().toList();
+        reasoning = reasoning == null || reasoning.isBlank() ? "off" : reasoning.trim().toLowerCase(Locale.ROOT);
+        if (!List.of("off", "low", "medium", "high", "default").contains(reasoning)) reasoning = "off";
         if (baseUrl == null || baseUrl.isBlank()) baseUrl = "https://openrouter.ai/api/v1";
         baseUrl = baseUrl.replaceAll("/+$", "");
         if (siteUrl == null || siteUrl.isBlank()) siteUrl = "https://github.com/AminOsbsd/IronFit_Flutter";
@@ -50,6 +61,6 @@ public record AiCoachProperties(
     /** Jamais la clé dans les journaux, même par accident (toString d'un record). */
     @Override
     public String toString() {
-        return "AiCoachProperties[model=" + model + ", baseUrl=" + baseUrl + ", enabled=" + enabled() + "]";
+        return "AiCoachProperties[model=" + model + ", fallbacks=" + fallbackModels + ", reasoning=" + reasoning + ", baseUrl=" + baseUrl + ", enabled=" + enabled() + "]";
     }
 }

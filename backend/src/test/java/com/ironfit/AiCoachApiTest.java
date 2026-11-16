@@ -63,6 +63,7 @@ class AiCoachApiTest extends ApiTestSupport {
         r.add("ironfit.ai.api-key", () -> KEY);
         r.add("ironfit.ai.base-url", () -> "http://127.0.0.1:" + FAKE.getAddress().getPort() + "/api/v1");
         r.add("ironfit.ai.model", () -> "test/model");
+        r.add("ironfit.ai.fallback-models", () -> "test/backup:free, test/model");
         r.add("ironfit.ai.timeout-seconds", () -> "2");
         r.add("ironfit.ai.rate-limit", () -> "4");
     }
@@ -135,6 +136,10 @@ class AiCoachApiTest extends ApiTestSupport {
         assertThat(sent.get("title")).isEqualTo("IronFit");
         JsonNode body = json.readTree(sent.get("body"));
         assertThat(body.path("model").asText()).isEqualTo("test/model");
+        assertThat(texts(body.path("models"), "x")).hasSize(2); // modèle principal + secours, sans doublon
+        assertThat(body.path("models").get(1).asText()).isEqualTo("test/backup:free");
+        assertThat(body.path("reasoning").path("enabled").isBoolean()).isTrue();
+        assertThat(body.path("reasoning").path("enabled").asBoolean()).isFalse(); // pas de « réflexion » : réponse rapide
         assertThat(body.path("stream").asBoolean()).isTrue();
         assertThat(body.path("messages").get(0).path("role").asText()).isEqualTo("system");
         String system = body.path("messages").get(0).path("content").asText();
@@ -174,6 +179,16 @@ class AiCoachApiTest extends ApiTestSupport {
         assertThat(r.status()).isEqualTo(429);
         assertThat(r.contentType()).startsWith("application/json");
         assertThat(json.readTree(r.text()).path("error").asText()).contains("sollicité");
+    }
+
+    @Test
+    void unModeleQuiNEcritRienDonneUneErreurClaire() throws Exception {
+        // Cas réel observé : un modèle « qui réfléchit » épuise max_tokens et ne renvoie aucun texte
+        HANDLER.set(ex -> reply(ex, 200, "text/event-stream",
+                "data: {\"choices\":[{\"delta\":{\"reasoning\":\"Je réfléchis…\"}}]}\n\ndata: [DONE]\n\n"));
+        List<JsonNode> events = chat(login("amira"), ask("Salut")).events(json);
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).path("error").asText()).contains("pas produit de réponse");
     }
 
     @Test

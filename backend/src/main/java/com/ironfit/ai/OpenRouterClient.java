@@ -57,6 +57,14 @@ public class OpenRouterClient {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", props.model());
+        if (!props.fallbackModels().isEmpty()) {
+            // Routage OpenRouter : modèle principal puis secours dans l'ordre (saturation, panne, refus)
+            List<String> chain = new java.util.ArrayList<>(List.of(props.model()));
+            props.fallbackModels().stream().filter(m -> !chain.contains(m)).forEach(chain::add);
+            body.put("models", chain);
+        }
+        Map<String, Object> reasoning = reasoning(props.reasoning());
+        if (reasoning != null) body.put("reasoning", reasoning);
         body.put("messages", messages);
         body.put("stream", true);
         body.put("max_tokens", props.maxTokens());
@@ -99,6 +107,18 @@ public class OpenRouterClient {
         return new Completion(res.body(), props.maxDurationSeconds());
     }
 
+    /**
+     * Paramètre « reasoning » d'OpenRouter. Par défaut désactivé : les modèles « qui réfléchissent » mettent plusieurs
+     * secondes de plus et peuvent épuiser max_tokens sans écrire de réponse. null = laisser le choix au modèle.
+     */
+    static Map<String, Object> reasoning(String mode) {
+        return switch (mode) {
+            case "default" -> null;
+            case "low", "medium", "high" -> Map.of("effort", mode, "exclude", true);
+            default -> Map.of("enabled", false);
+        };
+    }
+
     /** Code HTTP d'OpenRouter → erreur affichable (https://openrouter.ai/docs/api-reference/errors). */
     static ApiException forStatus(int status) {
         return switch (status) {
@@ -106,7 +126,8 @@ public class OpenRouterClient {
             case 402 -> new ApiException(HttpStatus.BAD_GATEWAY, "Le crédit OpenRouter du serveur est épuisé. Prévenez l'administrateur.");
             case 408 -> timeout();
             case 429 -> new ApiException(HttpStatus.TOO_MANY_REQUESTS, "AI Coach est très sollicité. Réessayez dans un instant.");
-            case 400, 404, 422 -> new ApiException(HttpStatus.BAD_GATEWAY, "Le modèle d'IA a refusé la demande (modèle OPENROUTER_MODEL invalide ?).");
+            case 400, 404, 422 -> new ApiException(HttpStatus.BAD_GATEWAY,
+                    "Le modèle d'IA a refusé la demande (OPENROUTER_MODEL invalide, ou modèle qui n'accepte pas OPENROUTER_REASONING=off).");
             default -> new ApiException(HttpStatus.BAD_GATEWAY, "Le service d'IA est momentanément indisponible. Réessayez plus tard.");
         };
     }

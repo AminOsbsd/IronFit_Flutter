@@ -46,6 +46,14 @@ void main() {
     });
   });
 
+  test('mise en forme légère : **gras** et titres, le reste en texte brut', () {
+    String plain(List<InlineSpan> s) => s.map((e) => (e as TextSpan).text).join();
+    List<String> bolds(List<InlineSpan> s) => [for (final e in s.cast<TextSpan>()) if (e.style?.fontWeight == FontWeight.w700) e.text!];
+    final s = coachSpans('## Bilan\n- Squat **72,5 kg** puis **75 kg**\nFin **non fermé');
+    expect(plain(s), 'Bilan\n- Squat 72,5 kg puis 75 kg\nFin **non fermé');
+    expect(bolds(s), ['Bilan', '72,5 kg', '75 kg']);
+  });
+
   group('appel du serveur', () {
     test('l\'historique, l\'espace et le jeton sont envoyés ; jamais de clé OpenRouter côté application', () async {
       final log = <http.Request>[];

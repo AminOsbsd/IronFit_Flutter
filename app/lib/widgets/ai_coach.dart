@@ -317,12 +317,37 @@ class _Bubble extends StatelessWidget {
             ),
             child: user
                 ? Text(m.content, style: const TextStyle(color: AppColors.ink, height: 1.35))
-                : SelectableText(m.content, style: TextStyle(color: cs.onSurface, height: 1.4)),
+                : SelectableText.rich(TextSpan(children: coachSpans(m.content)), style: TextStyle(color: cs.onSurface, height: 1.4)),
           ),
         ),
       ),
     );
   }
+}
+
+/// Mise en forme légère des réponses : **gras** et titres « # » (les petits modèles en écrivent malgré la consigne) ;
+/// le reste (listes « - », « 1. ») reste du texte brut. Un « ** » non refermé (réponse en cours) reste affiché tel quel.
+List<InlineSpan> coachSpans(String text) {
+  const bold = TextStyle(fontWeight: FontWeight.w700);
+  final spans = <InlineSpan>[];
+  final lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final heading = RegExp(r'^\s{0,3}#{1,6}\s+').firstMatch(line);
+    if (heading != null) {
+      spans.add(TextSpan(text: line.substring(heading.end).replaceAll('**', ''), style: bold));
+    } else {
+      var start = 0;
+      for (final m in RegExp(r'\*\*(.+?)\*\*').allMatches(line)) {
+        if (m.start > start) spans.add(TextSpan(text: line.substring(start, m.start)));
+        spans.add(TextSpan(text: m.group(1), style: bold));
+        start = m.end;
+      }
+      if (start < line.length) spans.add(TextSpan(text: line.substring(start)));
+    }
+    if (i < lines.length - 1) spans.add(const TextSpan(text: '\n'));
+  }
+  return spans;
 }
 
 /// Indicateur « AI Coach écrit… » en attendant le premier morceau de réponse.

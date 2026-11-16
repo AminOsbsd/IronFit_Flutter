@@ -257,6 +257,8 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 | `SHOW_RESET_CODE` | `true` | Code « mot de passe oublié » renvoyé à l'app (démo) |
 | `OPENROUTER_API_KEY` | *(vide)* | Clé OpenRouter d'AI Coach (serveur uniquement) ; vide = AI Coach désactivé |
 | `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Modèle OpenRouter utilisé par AI Coach |
+| `OPENROUTER_FALLBACK_MODELS` | *(vide)* | Modèles de secours (virgules), essayés si le principal est saturé — conseillé avec les modèles gratuits |
+| `OPENROUTER_REASONING` | `off` | « Réflexion » du modèle : `off` (le plus rapide), `low`, `medium`, `high`, `default` |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API compatible OpenAI (modifiable pour un proxy ou des tests) |
 | `OPENROUTER_SITE_URL` / `OPENROUTER_APP_TITLE` | URL du dépôt / `IronFit` | En-têtes `HTTP-Referer` et `X-Title` recommandés par OpenRouter |
 | `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS` | `30` / `90` | Attente du début de la réponse / durée maximale d'une réponse |
@@ -266,7 +268,7 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 ### 9.1 AI Coach (OpenRouter)
 
 1. Créer une clé sur [openrouter.ai/keys](https://openrouter.ai/keys) (et ajouter un peu de crédit).
-2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)).
+2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)). **Gratuit** (testé en novembre 2026) : `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free` avec `OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free` — premier mot en ~0,4 s ; limite de 50 requêtes/jour sur un compte sans crédit, modèles parfois saturés (d'où les secours).
 3. Redémarrer le backend, ouvrir l'application, cliquer sur **AI Coach** (en bas à droite).
 
 Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
@@ -431,7 +433,7 @@ Pour un téléphone réel : le backend écoute déjà sur toutes les interfaces 
 cd backend
 .\mvnw.cmd test
 
-# Application : analyse + 29 tests unitaires / widgets (dont 11 pour AI Coach, serveur simulé)
+# Application : analyse + 30 tests unitaires / widgets (dont 12 pour AI Coach, serveur simulé)
 cd app
 flutter analyze
 flutter test --exclude-tags integration

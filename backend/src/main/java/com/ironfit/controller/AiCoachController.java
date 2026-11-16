@@ -74,8 +74,14 @@ public class AiCoachController {
             res.setHeader("X-Accel-Buffering", "no"); // pas de mise en tampon derrière un reverse proxy nginx
             OutputStream out = res.getOutputStream();
             try {
-                completion.forEachDelta(text -> send(out, Map.of("delta", text)));
-                send(out, Map.of("done", true));
+                int[] parts = {0};
+                completion.forEachDelta(text -> {
+                    parts[0]++;
+                    send(out, Map.of("delta", text));
+                });
+                // Un modèle qui « réfléchit » peut consommer tous les jetons sans rien écrire
+                if (parts[0] == 0) send(out, Map.of("error", "AI Coach n'a pas produit de réponse. Réessayez ou reformulez."));
+                else send(out, Map.of("done", true));
             } catch (ApiException e) {
                 send(out, Map.of("error", e.getMessage()));
             }

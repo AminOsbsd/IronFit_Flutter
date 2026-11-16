@@ -45,7 +45,19 @@ class CoachPromptTest {
         assertThat(real.model()).isEqualTo(AiCoachProperties.DEFAULT_MODEL);
     }
 
-    private static AiCoachProperties props(String key) { return new AiCoachProperties(key, null, null, null, null, 0, 0, 0, 0); }
+    private static AiCoachProperties props(String key) { return new AiCoachProperties(key, null, null, null, null, null, null, 0, 0, 0, 0); }
+
+    @Test
+    void raisonnementDesactiveParDefautEtModelesDeSecoursNettoyes() {
+        AiCoachProperties p = new AiCoachProperties("k", " a/b:free ", java.util.List.of(" c/d:free", "", "c/d:free"), null, null, null, null, 0, 0, 0, 0);
+        assertThat(p.model()).isEqualTo("a/b:free");
+        assertThat(p.fallbackModels()).containsExactly("c/d:free");
+        assertThat(p.reasoning()).isEqualTo("off");
+        assertThat(OpenRouterClient.reasoning("off")).isEqualTo(java.util.Map.of("enabled", false));
+        assertThat(OpenRouterClient.reasoning("low")).containsEntry("effort", "low").containsEntry("exclude", true);
+        assertThat(OpenRouterClient.reasoning("default")).isNull();
+        assertThat(new AiCoachProperties("k", null, null, "bizarre", null, null, null, 0, 0, 0, 0).reasoning()).isEqualTo("off");
+    }
 
     @Test
     void lesErreursOpenRouterDonnentDesMessagesClairsSansJamaisRenvoyer401() {
