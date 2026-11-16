@@ -4,6 +4,7 @@ import '../core/theme/app_theme.dart';
 import '../core/theme/brand.dart';
 import '../models/module.dart';
 import '../services/auth_service.dart';
+import '../widgets/ai_coach.dart';
 import '../widgets/common_widgets.dart';
 import 'admin_screens.dart';
 import 'auth_screen.dart';
@@ -19,6 +20,7 @@ import 'risk_screen.dart';
 ///  - Coach « Espace coach »      : Accueil · Planning · Clients · Gestion · Profil
 ///  - Admin (administration)      : Accueil · Planning · Administration · Profil
 /// Écran étroit : barre de navigation en bas. Écran large (≥ 900 px) : rail latéral avec le logo.
+/// Le bouton « AI Coach » reste en bas à droite sur tous les onglets.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
   @override
@@ -65,6 +67,7 @@ class _HomeShellState extends State<HomeShell> {
         if (width >= 900) {
           final extended = width >= 1200;
           return Scaffold(
+            floatingActionButton: const AiCoachButton(extended: true),
             body: Row(children: [
               NavigationRail(
                 extended: extended,
@@ -89,6 +92,7 @@ class _HomeShellState extends State<HomeShell> {
 
         return Scaffold(
           body: body,
+          floatingActionButton: const AiCoachButton(),
           bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
             if (Api.isCoach) WorkspaceSwitch(onChanged: () => setState(() => tab = 0)),
             NavigationBar(
