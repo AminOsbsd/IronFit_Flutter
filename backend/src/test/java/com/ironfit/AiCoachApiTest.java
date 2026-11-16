@@ -102,10 +102,13 @@ class AiCoachApiTest extends ApiTestSupport {
         }
     }
 
-    private Chat chat(String token, Object body) throws Exception {
+    private Chat chat(String token, Object body) throws Exception { return chat(token, body, null); }
+
+    private Chat chat(String token, Object body, String accept) throws Exception {
         var req = MockMvcRequestBuilders.post("/api/ai-coach/chat").contentType(MediaType.APPLICATION_JSON)
                 .content(body instanceof String s ? s : json.writeValueAsString(body));
         if (token != null) req.header("Authorization", "Bearer " + token);
+        if (accept != null) req.header("Accept", accept);
         MockHttpServletResponse r = mvc.perform(req).andReturn().getResponse();
         return new Chat(r.getStatus(), String.valueOf(r.getContentType()), r.getContentAsString(StandardCharsets.UTF_8));
     }
@@ -161,6 +164,16 @@ class AiCoachApiTest extends ApiTestSupport {
 
         HANDLER.set(ex -> reply(ex, 503, "application/json", "{}"));
         assertThat(asRes(chat(token, ask("Salut"))).error()).contains("indisponible");
+    }
+
+    @Test
+    void unClientQuiNAccepteQueLeFluxSSERecoitQuandMemeLErreurEnJson() throws Exception {
+        // Régression : avec « Accept: text/event-stream » seul, l'erreur JSON devenait un 500
+        HANDLER.set(ex -> reply(ex, 429, "application/json", "{\"error\":{\"message\":\"Rate limit\",\"code\":429}}"));
+        Chat r = chat(login("leila"), ask("Salut"), "text/event-stream");
+        assertThat(r.status()).isEqualTo(429);
+        assertThat(r.contentType()).startsWith("application/json");
+        assertThat(json.readTree(r.text()).path("error").asText()).contains("sollicité");
     }
 
     @Test

@@ -122,7 +122,8 @@ class Api {
     final req = http.Request('POST', Uri.parse('$base/$path'))
       ..headers.addAll({
         'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
+        // JSON aussi : les erreurs (429, 503…) arrivent au format JSON habituel
+        'Accept': 'text/event-stream, application/json',
         if (token != null) 'Authorization': 'Bearer $token',
       })
       ..body = jsonEncode(body);

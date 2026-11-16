@@ -7,6 +7,7 @@ import com.ironfit.ai.OpenRouterClient.Message;
 import com.ironfit.config.AiCoachProperties;
 import com.ironfit.dto.AiCoachDtos.ChatRequest;
 import com.ironfit.exception.ApiException;
+import com.ironfit.exception.ErrorResponse;
 import com.ironfit.security.CurrentUser;
 import com.ironfit.security.RateLimiter;
 import com.ironfit.service.AiCoachService;
@@ -34,13 +35,15 @@ public class AiCoachController {
     private final OpenRouterClient openRouter;
     private final RateLimiter limiter;
     private final AiCoachProperties props;
-    private final ObjectMapper json = new ObjectMapper();
+    private final ObjectMapper json;
 
-    public AiCoachController(AiCoachService coach, OpenRouterClient openRouter, RateLimiter limiter, AiCoachProperties props) {
+    public AiCoachController(AiCoachService coach, OpenRouterClient openRouter, RateLimiter limiter, AiCoachProperties props,
+                             ObjectMapper json) {
         this.coach = coach;
         this.openRouter = openRouter;
         this.limiter = limiter;
         this.props = props;
+        this.json = json;
     }
 
     /** Indique à l'application si AI Coach est configuré (sans jamais exposer la clé). */
@@ -49,10 +52,21 @@ public class AiCoachController {
 
     @PostMapping("/chat")
     public void chat(@AuthenticationPrincipal CurrentUser me, @Valid @RequestBody ChatRequest body, HttpServletResponse res) throws IOException {
-        limiter.check("ai-coach " + me.id(), props.rateLimit(), "Vous envoyez beaucoup de messages : patientez une minute avant de réessayer.");
-        List<Message> messages = coach.prepare(me, body);
+        Completion opened;
+        try {
+            limiter.check("ai-coach " + me.id(), props.rateLimit(), "Vous envoyez beaucoup de messages : patientez une minute avant de réessayer.");
+            List<Message> messages = coach.prepare(me, body);
+            opened = openRouter.stream(messages);
+        } catch (ApiException e) {
+            // Écrit directement en JSON : un client qui n'accepte que text/event-stream reçoit quand même l'erreur (sinon 500)
+            res.setStatus(e.getStatus().value());
+            res.setContentType("application/json");
+            res.setCharacterEncoding("UTF-8");
+            res.getWriter().write(json.writeValueAsString(ErrorResponse.of(e.getStatus().value(), e.getMessage())));
+            return;
+        }
 
-        try (Completion completion = openRouter.stream(messages)) {   // erreurs ici → JSON + code HTTP (rien n'est encore écrit)
+        try (Completion completion = opened) {
             res.setStatus(200);
             res.setContentType("text/event-stream");
             res.setCharacterEncoding("UTF-8");

@@ -56,6 +56,7 @@ void main() {
       final req = log.single;
       expect(req.url.path, '/api/ai-coach/chat');
       expect(req.headers['Authorization'], 'Bearer jeton');
+      expect(req.headers['Accept'], allOf(contains('text/event-stream'), contains('application/json')), reason: 'les erreurs arrivent en JSON');
       expect(jsonDecode(req.body), {
         'messages': [
           {'role': 'user', 'content': 'Bonjour'},
