@@ -96,6 +96,7 @@ IronFit_Flutter/
 │  ├─ pom.xml
 │  ├─ mvnw, mvnw.cmd, .mvn/        Maven Wrapper (Maven 3.9.16 téléchargé au premier lancement)
 │  ├─ .env.example                 Modèle de configuration locale (copier en .env)
+│  ├─ knowledge/coach-knowledge.md Base de connaissances d'AI Coach (horaires, règles, FAQ…), à compléter
 │  ├─ start.bat                    mvnw spring-boot:run
 │  ├─ tools/sqlite-to-mysql.js     Migration unique : ancienne base SQLite → script SQL MySQL
 │  ├─ data/                        (non versionné) clé JWT générée, ancienne base SQLite conservée
@@ -113,7 +114,7 @@ IronFit_Flutter/
 │     │  ├─ security/              JwtService, JwtAuthFilter, PasswordHasher, RateLimiter, CurrentUser…
 │     │  ├─ config/                SecurityConfig, JacksonConfig, AppProperties, DataInitializer, XamppMariaDbDialect
 │     │  ├─ exception/             ApiException, ErrorResponse, GlobalExceptionHandler
-│     │  └─ ai/                    AI Coach : OpenRouterClient (proxy SSE), CoachPrompt (prompt système)
+│     │  └─ ai/                    AI Coach : OpenRouterClient (proxy SSE), CoachPrompt (prompt système), KnowledgeBase
 │     ├─ main/resources/application.properties
 │     └─ test/                     31 tests d'intégration (MockMvc + H2 en mode MySQL)
 └─ app/                            Application Flutter
@@ -264,6 +265,7 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 | `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS` | `30` / `90` | Attente du début de la réponse / durée maximale d'une réponse |
 | `AI_MAX_TOKENS` | `700` | Longueur maximale d'une réponse |
 | `AI_RATE_LIMIT` | `12` | Messages AI Coach par minute et par utilisateur |
+| `AI_KNOWLEDGE_FILE` | `knowledge/coach-knowledge.md` | Base de connaissances de la salle (relative au dossier `backend/`) ; vide = aucune |
 
 ### 9.1 AI Coach (OpenRouter)
 
@@ -272,6 +274,12 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 3. Redémarrer le backend, ouvrir l'application, cliquer sur **AI Coach** (en bas à droite).
 
 Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
+
+**Base de connaissances** : en plus des données du membre, chaque réponse reçoit :
+- les **données vivantes de la salle** lues en base (formules et tarifs, planning hebdomadaire, offres en cours, coachs et spécialités) : rien à recopier ;
+- le fichier **`backend/knowledge/coach-knowledge.md`**, à compléter par la salle (horaires, adresse, règlement, équipements, FAQ, consignes d'entraînement maison). Il est relu automatiquement quand il change (sans redémarrage), limité à 12 000 caractères. Une ligne contenant « À COMPLÉTER » est transmise comme « information inconnue » : AI Coach répond qu'il ne sait pas et renvoie vers l'accueil au lieu d'inventer (vérifié avec le modèle gratuit, qui inventait les horaires du dimanche sans cette mention).
+
+Le prompt place d'abord ce qui change rarement (règles, base de connaissances, données de la salle) puis les données du membre, ce qui permet aux fournisseurs qui le proposent de mettre ce début en cache.
 
 > La clé OpenRouter ne doit jamais être mise dans l'application Flutter ni dans un fichier versionné.
 

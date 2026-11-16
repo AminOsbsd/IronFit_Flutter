@@ -3,6 +3,7 @@ package com.ironfit.service.impl;
 import static com.ironfit.ai.CoachPrompt.clip;
 
 import com.ironfit.ai.CoachPrompt;
+import com.ironfit.ai.KnowledgeBase;
 import com.ironfit.ai.CoachPrompt.Mode;
 import com.ironfit.ai.OpenRouterClient.Message;
 import com.ironfit.dto.AiCoachDtos;
@@ -35,10 +36,14 @@ public class AiCoachServiceImpl implements AiCoachService {
     private final BookingRepository bookings;
     private final ClassSessionRepository classes;
     private final CoachClientRepository links;
+    private final PlanRepository plans;
+    private final PromoRepository promos;
+    private final KnowledgeBase knowledge;
 
     public AiCoachServiceImpl(UserRepository users, ProgramRepository programs, ExerciseRepository exercises, WorkoutRepository workouts,
                               MeasureRepository measures, CheckinRepository checkins, BookingRepository bookings,
-                              ClassSessionRepository classes, CoachClientRepository links) {
+                              ClassSessionRepository classes, CoachClientRepository links, PlanRepository plans,
+                              PromoRepository promos, KnowledgeBase knowledge) {
         this.users = users;
         this.programs = programs;
         this.exercises = exercises;
@@ -48,6 +53,9 @@ public class AiCoachServiceImpl implements AiCoachService {
         this.bookings = bookings;
         this.classes = classes;
         this.links = links;
+        this.plans = plans;
+        this.promos = promos;
+        this.knowledge = knowledge;
     }
 
     @Override
@@ -72,7 +80,7 @@ public class AiCoachServiceImpl implements AiCoachService {
         };
 
         List<Message> out = new ArrayList<>();
-        out.add(new Message("system", CoachPrompt.system(mode, firstName(u.getName()), today, facts)));
+        out.add(new Message("system", CoachPrompt.system(mode, firstName(u.getName()), today, knowledge.text(), gymFacts(today), facts)));
         out.addAll(recent(history));
         return out;
     }
@@ -88,6 +96,53 @@ public class AiCoachServiceImpl implements AiCoachService {
             kept.addFirst(new Message(m.role(), m.content().trim()));
         }
         return new ArrayList<>(kept);
+    }
+
+    // ------------------------------------------------------------------ données de la salle (identiques pour tous)
+
+    /** Formules, planning hebdomadaire, offres en cours et coachs : ce que tout membre voit déjà dans l'application. */
+    List<String> gymFacts(LocalDate today) {
+        List<String> f = new ArrayList<>();
+        List<Plan> allPlans = plans.search(null, PageRequest.of(0, 20));
+        if (allPlans.isEmpty()) f.add("Subscription plans: none listed");
+        for (Plan p : allPlans) {
+            f.add("Plan \"" + clip(p.getName(), 60) + "\": " + money(p.getPrice()) + " DT"
+                    + (p.getDuration() == null || p.getDuration().isBlank() ? "" : " for " + clip(p.getDuration(), 40))
+                    + (p.getDescr() == null || p.getDescr().isBlank() ? "" : " (" + clip(p.getDescr(), 120) + ")"));
+        }
+
+        List<ClassSession> week = classes.findAllWithCoach().stream().limit(40).toList();
+        if (week.isEmpty()) f.add("Weekly group classes: none scheduled");
+        else {
+            StringJoiner j = new StringJoiner("; ");
+            for (ClassSession c : week) {
+                j.add(day(c.getDay()) + " " + c.getTime() + " " + clip(c.getTitle(), 50)
+                        + (c.getCoach() == null ? "" : " with " + firstName(c.getCoach().getName()))
+                        + (c.getSpots() == null ? "" : " (max capacity " + c.getSpots() + " people)"));
+            }
+            f.add("Weekly group class schedule (repeats every week, book in the \"Planning\" tab): " + j);
+        }
+
+        List<Promo> offers = promos.findByUntilIsNullOrUntilGreaterThanEqualOrderByDiscountDesc(today, PageRequest.of(0, 10));
+        for (Promo p : offers) {
+            f.add("Current offer \"" + clip(p.getTitle(), 60) + "\""
+                    + (p.getDiscount() == null ? "" : p.getDiscount() >= 100 ? ": FREE (100 % off)" : ": " + p.getDiscount() + " % off")
+                    + (p.getDescr() == null || p.getDescr().isBlank() ? "" : " (" + clip(p.getDescr(), 120) + ")")
+                    + (p.getUntil() == null ? "" : ", valid until " + p.getUntil()));
+        }
+        if (offers.isEmpty()) f.add("Current offers: none");
+
+        List<User> staff = users.findByRoleAndActiveTrueOrderByNameAsc(Role.COACH);
+        if (!staff.isEmpty()) {
+            StringJoiner j = new StringJoiner(", ");
+            staff.stream().limit(30).forEach(c -> j.add(firstName(c.getName()) + (c.getSpecialty() == null || c.getSpecialty().isBlank() ? "" : " (" + clip(c.getSpecialty(), 50) + ")")));
+            f.add("Coaches (members can request one in \"Explorer\" > Coachs): " + j);
+        }
+        return f;
+    }
+
+    private static String money(java.math.BigDecimal v) {
+        return v == null ? "?" : v.stripTrailingZeros().toPlainString();
     }
 
     // ------------------------------------------------------------------ membre (ou coach dans « Mon entraînement »)

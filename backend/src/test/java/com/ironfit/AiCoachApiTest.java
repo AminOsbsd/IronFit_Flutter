@@ -36,8 +36,14 @@ class AiCoachApiTest extends ApiTestSupport {
 
     interface Handler { void handle(HttpExchange ex) throws IOException; }
 
+    /** Base de connaissances de test : une ligne utile, une ligne « à compléter » qui ne doit jamais partir. */
+    private static final java.nio.file.Path KNOWLEDGE;
+
     static {
         try {
+            KNOWLEDGE = java.nio.file.Files.createTempFile("ironfit-kb", ".md");
+            java.nio.file.Files.writeString(KNOWLEDGE, "- Horaires : 7 h – 21 h en semaine\n- Adresse : À COMPLÉTER\n", StandardCharsets.UTF_8);
+            KNOWLEDGE.toFile().deleteOnExit();
             FAKE = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -66,6 +72,7 @@ class AiCoachApiTest extends ApiTestSupport {
         r.add("ironfit.ai.fallback-models", () -> "test/backup:free, test/model");
         r.add("ironfit.ai.timeout-seconds", () -> "2");
         r.add("ironfit.ai.rate-limit", () -> "4");
+        r.add("ironfit.ai.knowledge-file", KNOWLEDGE::toString);
     }
 
     @AfterAll
@@ -145,6 +152,10 @@ class AiCoachApiTest extends ApiTestSupport {
         String system = body.path("messages").get(0).path("content").asText();
         assertThat(system).contains("Youssef", "Prise de force — 4 semaines", "Personal coach: Sami", "weight 80.6 kg", "Subscription: active until");
         assertThat(system).doesNotContain("Karray", "youssef@", "1234"); // ni nom de famille, ni e-mail, ni mot de passe
+        // Base de connaissances (sans les lignes à compléter) et données vivantes de la salle
+        assertThat(system).contains("Horaires : 7 h – 21 h en semaine", "Adresse : UNKNOWN (not provided by the gym").doesNotContain("COMPLÉTER");
+        assertThat(system).contains("Plan \"Mensuel\": 60 DT for 1 mois", "Weekly group class schedule", "Current offer \"Rentrée sportive\": 20 % off",
+                "Coaches (members can request one", "\"Amenez un ami\": FREE (100 % off)", "max capacity");
         assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Comment progresser au squat ?");
     }
 

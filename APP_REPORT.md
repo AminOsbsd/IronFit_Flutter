@@ -65,6 +65,7 @@ IronFit_Flutter/
 │  ├─ pom.xml
 │  ├─ mvnw, mvnw.cmd, .mvn/       Maven Wrapper
 │  ├─ .env.example                Template for backend/.env (DB, JWT, seed, SMTP, OpenRouter); .env is git-ignored
+│  ├─ knowledge/coach-knowledge.md AI Coach knowledge base edited by the gym (hours, rules, FAQ, house guidelines)
 │  ├─ start.bat
 │  ├─ tools/sqlite-to-mysql.js    One-off migration from the old Node.js/SQLite version
 │  └─ src/
@@ -80,7 +81,7 @@ IronFit_Flutter/
 │     │  ├─ config/               Security/CORS, Jackson, AppProperties, AiCoachProperties, seed data, MariaDB dialect
 │     │  ├─ exception/            ApiException, ErrorResponse, GlobalExceptionHandler
 │     │  ├─ retention/            ChurnScorer (pure scoring) + RetentionJob (@Scheduled)
-│     │  └─ ai/                   OpenRouterClient (SSE proxy) + CoachPrompt (system prompt)   [AI Coach]
+│     │  └─ ai/                   OpenRouterClient (SSE proxy), CoachPrompt (system prompt), KnowledgeBase   [AI Coach]
 │     ├─ main/resources/application.properties   All settings, overridable by env vars
 │     └─ test/                    MockMvc integration tests on H2 + unit tests (incl. AI Coach)
 └─ app/                           Flutter application
@@ -130,7 +131,10 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 | `OPENROUTER_API_KEY` | empty (coach disabled) | **AI Coach key, server only** |
 | `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | AI Coach model |
 | `OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, `OPENROUTER_APP_TITLE` | OpenRouter URL, repo URL, `IronFit` | Endpoint and the `HTTP-Referer` / `X-Title` headers |
+| `OPENROUTER_FALLBACK_MODELS` | empty | Comma-separated backup models (OpenRouter `models` routing), recommended with free models |
+| `OPENROUTER_REASONING` | `off` | Model "thinking": `off` (fastest), `low`, `medium`, `high`, `default` |
 | `AI_TIMEOUT_SECONDS`, `AI_MAX_DURATION_SECONDS`, `AI_MAX_TOKENS`, `AI_RATE_LIMIT` | `30`, `90`, `700`, `12` | AI Coach limits |
+| `AI_KNOWLEDGE_FILE` | `knowledge/coach-knowledge.md` | Gym knowledge base, relative to `backend/`; empty = none |
 
 ### Commands
 
@@ -138,8 +142,8 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 |---|---|
 | Run backend | `cd backend && ./mvnw spring-boot:run` (or `1-lancer-serveur.bat`); serves `http://localhost:8080/api` |
 | Run app | `cd app && flutter run -d windows` / `-d chrome` / `-d emulator-5554` (or `2-lancer-app-flutter.bat`) |
-| Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 59 tests on this branch |
-| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 29 tests on this branch |
+| Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 65 tests on this branch |
+| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 30 tests on this branch |
 | App ↔ backend integration tests | Start a backend on a throwaway DB (README §15), then `flutter test test/backend_integration_test.dart` |
 | Build | `flutter build web` / `windows` / `apk --release`; `./mvnw package` → `target/ironfit-backend-3.0.0.jar` |
 | Deploy | **Not determined from code.** README §18 gives production advice (TLS reverse proxy, strong secrets, `DDL_AUTO=validate`) but there is no deployment tooling. |
@@ -459,13 +463,15 @@ Prefix `/api`, JSON in `snake_case`. Every route needs `Authorization: Bearer <t
 |---|---|---|
 | `backend/.../config/AiCoachProperties.java` | new | Typed `ironfit.ai.*` settings; key never printed |
 | `backend/.../ai/OpenRouterClient.java` | new | Server-side OpenRouter call, SSE parsing, timeouts, error mapping |
-| `backend/.../ai/CoachPrompt.java` | new | Domain-specific system prompt (pure, testable) |
+| `backend/.../ai/CoachPrompt.java` | new | Domain-specific system prompt (pure, testable); stable sections first |
+| `backend/.../ai/KnowledgeBase.java` | new | Loads `knowledge/coach-knowledge.md`, reloads on change, 12 000-char cap, turns `À COMPLÉTER` lines into explicit "unknown" facts |
+| `backend/knowledge/coach-knowledge.md` | new | Starter knowledge base: app how-to and house training guidelines; gym-specific lines left `À COMPLÉTER` |
 | `backend/.../dto/AiCoachDtos.java` | new | Validated request records and limits |
 | `backend/.../service/AiCoachService.java`, `impl/AiCoachServiceImpl.java` | new | Builds the user's data context and the message list |
 | `backend/.../controller/AiCoachController.java` | new | `/api/ai-coach/status` and `/chat` (SSE) |
 | `backend/.../security/RateLimiter.java` | changed | Added a keyed `check(key, max, message)` for per-user limits; existing behaviour unchanged |
 | `backend/src/main/resources/application.properties` | changed | `ironfit.ai.*` ← `OPENROUTER_*` / `AI_*` env vars |
-| `backend/src/test/...` (`AiCoachApiTest`, `AiCoachDisabledApiTest`, `ai/CoachPromptTest`, `application-test.properties`) | new / changed | 14 tests against a fake local OpenRouter; tests never read a real key |
+| `backend/src/test/...` (`AiCoachApiTest`, `AiCoachDisabledApiTest`, `ai/CoachPromptTest`, `application-test.properties`) | new / changed | 20 tests (incl. `ai/KnowledgeBaseTest`) against a fake local OpenRouter; tests never read a real key |
 | `backend/.env.example` | changed | OpenRouter variables; committed SMTP credentials replaced by placeholders |
 | `app/lib/core/config/app_config.dart` | changed | AI Coach timeouts and limits |
 | `app/lib/core/network/api_client.dart` | changed | `Api.postStream` for streamed responses |
@@ -474,7 +480,7 @@ Prefix `/api`, JSON in `snake_case`. Every route needs `Authorization: Bearer <t
 | `app/lib/services/ai_coach_chat.dart` | new | Session conversation state |
 | `app/lib/widgets/ai_coach.dart` | new | Floating button, side panel / bottom sheet, bubbles, typing indicator, banners |
 | `app/lib/screens/home_shell.dart` | changed | Adds the button to both layouts |
-| `app/test/ai_coach_test.dart` | new | 11 tests (parser, client, state, widget flow) with mocked HTTP |
+| `app/test/ai_coach_test.dart` | new | 12 tests (parser, client, state, widget flow, bold rendering) with mocked HTTP |
 | `README.md` | changed | Setup (§9.1), env vars, routes, test counts |
 
 No new dependencies were needed. The backend uses the JDK `HttpClient` and the existing Jackson; the app uses the existing `http` package.
@@ -489,12 +495,20 @@ No new dependencies were needed. The backend uses the JDK `HttpClient` and the e
    - **Admin mode:** member, coach and subscription counts; subscriptions expiring within 7 days; coaching counts; workouts in the last 7 days; check-ins today; number of classes.
 
    Only the user's **first name** is sent, never the last name, e-mail, phone or login.
-5. **Calling OpenRouter.** `OpenRouterClient.stream` calls `{OPENROUTER_BASE_URL}/chat/completions` with `stream: true` and the server-side key. The controller then relays each delta as SSE.
+
+   For every mode, the prompt also gets the **knowledge base**:
+   - **live gym data** from the database: plans and prices in DT, the weekly class schedule with capacity, current offers (100 % shown as "FREE"), and coaches with their specialties;
+   - the text of **`backend/knowledge/coach-knowledge.md`**.
+
+   A rule tells the model to answer gym questions only from these two sections and to say it doesn't know otherwise. Section order is rules → knowledge → gym data → user data, so the stable prefix can be cached by providers that support it.
+5. **Calling OpenRouter.** `OpenRouterClient.stream` calls `{OPENROUTER_BASE_URL}/chat/completions` with `stream: true`, the server-side key, `reasoning: {enabled: false}` (unless `OPENROUTER_REASONING` says otherwise) and, when fallbacks are set, `models: [primary, …fallbacks]`. The controller relays each delta as SSE. A stream that ends with no text becomes an `error` event.
 6. **Rendering.** The app parses the events. On the first delta the state becomes `streaming` and the reply bubble grows live. The user can **stop** a reply, **retry** after an error, **clear** the conversation, or close the panel with ✕, Esc or a barrier tap.
 7. **Lifetime.** The history survives closing and reopening the panel and is cleared on logout or account change.
 
 ### Configuration
-`OPENROUTER_API_KEY` (required to enable), `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, `OPENROUTER_APP_TITLE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_DURATION_SECONDS`, `AI_MAX_TOKENS`, `AI_RATE_LIMIT`. Defaults are listed in §4.
+`OPENROUTER_API_KEY` (required to enable), `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODELS`, `OPENROUTER_REASONING`, `AI_KNOWLEDGE_FILE`, `OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, `OPENROUTER_APP_TITLE`, `AI_TIMEOUT_SECONDS`, `AI_MAX_DURATION_SECONDS`, `AI_MAX_TOKENS`, `AI_RATE_LIMIT`. Defaults are listed in §4.
+
+Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free`, `OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free`. Free accounts get 50 requests per day.
 
 ### Protections
 - The key exists only on the server and never appears in logs, `toString()` output or responses.
@@ -506,19 +520,26 @@ No new dependencies were needed. The backend uses the JDK `HttpClient` and the e
 
 ### Verification done on this branch
 - **Automated:**
-  - backend: 59/59 tests;
-  - app: `flutter analyze` clean, 29/29 tests.
+  - backend: 65/65 tests;
+  - app: `flutter analyze` clean, 30/30 tests.
 - **Manual:**
   - The real backend ran on in-memory H2 with demo data and talked to a local mock OpenRouter; the Flutter web build was used in the browser as `youssef`.
   - Desktop side panel and phone bottom sheet, in light and dark mode: OK.
   - The streamed reply quoted the user's real program, last workout and subscription from the database.
   - Esc closes the panel; the upstream 429 shows a clear message with Retry.
   - This check found and fixed a bug: pre-stream errors returned 500 to clients that only accept `text/event-stream`. A regression test now covers it.
-- **Not verified:** a call to the real OpenRouter (no key was available) and a run against MySQL/MariaDB.
+- **Real OpenRouter** (free-tier key, backend on H2):
+  - With reasoning **on**, `nemotron-3.5-lightning:free` spent 3.7 s and its whole token budget thinking and returned no text. With reasoning **off**, the first word arrived in about 0.4 s.
+  - The `gemma-4` free models were rate-limited upstream; the fallback chain answered with Nemotron in the same request.
+  - Member questions were answered in French with the user's real data in 1–4 s.
+  - Knowledge base: prices, schedule and offers were answered correctly from live data (1.7 s). Before the "unknown" marking, the model **invented** Sunday opening hours; after it, it said it didn't know and pointed to the front desk (0.8 s).
+- **Not verified:** a run against MySQL/MariaDB.
 
 ### Limitations
 - The conversation is not persisted: it is lost on reload, logout or app restart.
-- Replies are plain text. The prompt asks for no markdown and there is no markdown renderer.
+- Formatting: only `**bold**` and `#` headings are rendered (small models write them anyway); other markdown shows as text.
+- Small free models can still omit or misread facts (one offer out of two was omitted in testing). A paid model such as `anthropic/claude-haiku-5.5` follows the rules more reliably.
+- The knowledge base is sent whole with every request; past roughly 12 000 characters it would need retrieval (RAG) instead.
 - The coach and admin modes see only aggregate numbers. By design, no other member's personal data is sent to OpenRouter, so a coach must describe a client in the chat.
 - The member's own data (including free-text workout notes) **is** sent to OpenRouter. This should appear in the privacy notice before production.
 - Each streaming reply holds one servlet thread for its duration (synchronous writer, no async dispatch). That is fine for a single gym, not for heavy load.
@@ -540,7 +561,7 @@ No new dependencies were needed. The backend uses the JDK `HttpClient` and the e
 - No CI, containerisation or deployment scripts: **Not determined from code** how production is deployed.
 
 **Code quality and tests**
-- The README is partly stale: it states "31 tests" for the backend, while the base branch already had 45 (59 now).
+- The README is partly stale: it states "31 tests" for the backend, while the base branch already had 45 (65 now).
 - Flutter lists are untyped JSON maps; only `AppUser` is a typed model.
 - `test/backend_integration_test.dart` needs a running backend; the `integration` tag description in `dart_test.yaml` still mentions the old Node server.
 

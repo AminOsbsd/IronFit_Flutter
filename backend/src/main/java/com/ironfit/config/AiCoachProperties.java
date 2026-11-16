@@ -19,6 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxDurationSeconds durée maximale d'une réponse en streaming (coupée au-delà)
  * @param maxTokens          longueur maximale d'une réponse
  * @param rateLimit          messages par minute et par utilisateur
+ * @param knowledgeFile      base de connaissances de la salle (AI_KNOWLEDGE_FILE), relue quand elle change ; vide = aucune
  */
 @ConfigurationProperties(prefix = "ironfit.ai")
 public record AiCoachProperties(
@@ -32,7 +33,8 @@ public record AiCoachProperties(
         int timeoutSeconds,
         int maxDurationSeconds,
         int maxTokens,
-        int rateLimit) {
+        int rateLimit,
+        String knowledgeFile) {
 
     public static final String DEFAULT_MODEL = "anthropic/claude-haiku-5.5";
 

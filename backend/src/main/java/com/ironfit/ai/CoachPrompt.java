@@ -57,6 +57,13 @@ public final class CoachPrompt {
             - "Profil" tab: account settings. Coaches switch between "Mon entraînement" and "Espace coach".
             """;
 
+    private static final String GYM_RULE = """
+            Questions about this gym (plans and prices, class schedule, opening hours, rules, offers, coaches, facilities): \
+            answer ONLY from the GYM KNOWLEDGE BASE and GYM DATA sections below, and quote them precisely. If the answer is \
+            not there, say you do not have that information and suggest asking at the front desk. Never make up prices, \
+            times, names or policies. For training advice, follow the house guidelines of the knowledge base when present.
+            """;
+
     private static final String MEMBER = """
             Context: you are talking with a gym member about their own training. Help them train consistently, \
             follow their program, progress safely and stay motivated.
@@ -78,7 +85,25 @@ public final class CoachPrompt {
      * @param facts     lignes de données déjà formatées (peut être vide)
      */
     public static String system(Mode mode, String firstName, LocalDate today, List<String> facts) {
+        return system(mode, firstName, today, "", List.of(), facts);
+    }
+
+    /**
+     * Ordre choisi pour la mise en cache des prompts chez les fournisseurs : d'abord ce qui ne change presque jamais
+     * (règles, base de connaissances, données de la salle), ensuite ce qui dépend de l'utilisateur.
+     *
+     * @param knowledge base de connaissances de la salle (texte libre, peut être vide)
+     * @param gymFacts  données vivantes de la salle tirées de la base (formules, planning, offres, coachs)
+     */
+    public static String system(Mode mode, String firstName, LocalDate today, String knowledge, List<String> gymFacts, List<String> facts) {
         StringBuilder sb = new StringBuilder(BASE).append('\n');
+        sb.append(GYM_RULE).append('\n');
+        sb.append("GYM KNOWLEDGE BASE (written by the gym staff):\n");
+        sb.append(knowledge == null || knowledge.isBlank() ? "(empty)" : knowledge.trim()).append("\n\n");
+        sb.append("GYM DATA (live from the IronFit database, prices in DT = Tunisian dinar):\n");
+        if (gymFacts == null || gymFacts.isEmpty()) sb.append("- (none)\n");
+        else for (String g : gymFacts) sb.append("- ").append(g).append('\n');
+        sb.append('\n');
         sb.append(switch (mode) {
             case MEMBER -> MEMBER;
             case COACH -> COACH;
