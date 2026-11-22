@@ -2,13 +2,13 @@ package com.ironfit.service.impl;
 
 import com.ironfit.dto.ClassDtos.*;
 import com.ironfit.dto.CommonDtos.IdResponse;
-import com.ironfit.entity.Booking;
+import com.ironfit.entity.DatedBooking;
 import com.ironfit.entity.Checkin;
 import com.ironfit.entity.ClassSession;
 import com.ironfit.entity.Role;
 import com.ironfit.entity.User;
 import com.ironfit.exception.ApiException;
-import com.ironfit.repository.BookingRepository;
+import com.ironfit.repository.DatedBookingRepository;
 import com.ironfit.repository.CheckinRepository;
 import com.ironfit.repository.ClassSessionRepository;
 import com.ironfit.repository.UserRepository;
@@ -29,14 +29,23 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class ClassServiceImpl implements ClassService {
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager em;
+    private static LocalDate today() { return LocalDate.now(java.time.ZoneId.of("Africa/Tunis")); }
+    private LocalDate date(ClassSession c, LocalDate requested) {
+        LocalDate d=requested==null ? today().plusDays((c.getDay()-today().getDayOfWeek().getValue()+8)%7) : requested;
+        if(requested==null && d.equals(today()) && java.time.LocalTime.parse(c.getTime()).isBefore(java.time.LocalTime.now(java.time.ZoneId.of("Africa/Tunis")))) d=d.plusWeeks(1);
+        if(d.getDayOfWeek().getValue()-1 != c.getDay()) throw ApiException.badRequest("Date incompatible avec le jour du cours");
+        return d;
+    }
+
     private final ClassSessionRepository classes;
-    private final BookingRepository bookings;
+    private final DatedBookingRepository bookings;
     private final CheckinRepository checkins;
     private final UserRepository users;
     private final AccessService access;
     private final NotificationService notifications;
 
-    public ClassServiceImpl(ClassSessionRepository classes, BookingRepository bookings, CheckinRepository checkins, UserRepository users,
+    public ClassServiceImpl(ClassSessionRepository classes, DatedBookingRepository bookings, CheckinRepository checkins, UserRepository users,
                             AccessService access, NotificationService notifications) {
         this.classes = classes;
         this.bookings = bookings;
@@ -57,13 +66,12 @@ public class ClassServiceImpl implements ClassService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ClassDto> list(CurrentUser me) {
-        Map<Long, Long> taken = new HashMap<>();
-        for (Object[] row : bookings.countPerClass()) taken.put((Long) row[0], (Long) row[1]);
-        Set<Long> mine = new HashSet<>(bookings.classIdsBookedBy(me.id()));
-        return classes.findAllWithCoach().stream().map(c -> new ClassDto(c.getId(), c.getDay(), c.getTime(), c.getTitle(), c.coachId(), c.getSpots(),
-                c.getCoach() == null ? null : c.getCoach().getName(), c.getCoach() == null ? null : c.getCoach().getSpecialty(),
-                taken.getOrDefault(c.getId(), 0L), mine.contains(c.getId()))).toList();
+    public List<ClassDto> list(CurrentUser me, LocalDate week) {
+        LocalDate monday=week==null ? null : week.minusDays(week.getDayOfWeek().getValue()-1);
+        return classes.findAllWithCoach().stream().map(c -> {
+            LocalDate d=date(c,monday==null?null:monday.plusDays(c.getDay()));
+            return new ClassDto(c.getId(),c.getDay(),c.getTime(),c.getTitle(),c.coachId(),c.getSpots(),c.getCoach()==null?null:c.getCoach().getName(),c.getCoach()==null?null:c.getCoach().getSpecialty(),bookings.countByClassSessionIdAndSessionDate(c.getId(),d),bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(),c.getId(),d).isPresent(),d);
+        }).toList();
     }
 
     /** Coach : la séance lui est toujours attribuée. Admin : coach libre (doit être un coach). */
@@ -103,6 +111,10 @@ public class ClassServiceImpl implements ClassService {
     public void update(CurrentUser me, Long id, ClassRequest req) {
         ClassSession c = owned(me, id);
         boolean moved = !Objects.equals(c.getDay(), req.day()) || !Objects.equals(c.getTime(), req.time());
+        em.lock(c,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        if(!Objects.equals(c.getDay(),req.day()) && bookings.countByClassSessionId(c.getId())>0) throw ApiException.conflict("Ce cours possède des réservations datées. Annulez-les avant de changer son jour.");
+        int capacity=req.spots()==null?10:req.spots();
+        for(var b:bookings.findAll()) if(b.getClassSession().getId().equals(c.getId()) && !b.getSessionDate().isBefore(today()) && bookings.countByClassSessionIdAndSessionDate(c.getId(),b.getSessionDate())>capacity) throw ApiException.conflict("La capacité ne peut pas être inférieure aux réservations existantes");
         apply(me, c, req);
         if (moved) notifyBooked(c.getId(), "Séance modifiée", "« " + c.getTitle() + " » a lieu désormais à " + c.getTime() + ".");
     }
@@ -116,43 +128,47 @@ public class ClassServiceImpl implements ClassService {
     }
 
     @Override
-    public BookResponse book(CurrentUser me, Long classId) {
+    public BookResponse book(CurrentUser me, Long classId, LocalDate requested, Boolean desired) {
         AccessService.require(me.isMember());
         ClassSession c = cls(classId);
-        var existing = bookings.findByUserIdAndClassSessionId(me.id(), c.getId());
+        em.lock(c,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        LocalDate d=date(c,requested);
+        if(d.isBefore(today()) || d.isAfter(today().plusDays(90))) throw ApiException.badRequest("Réservation possible entre aujourd’hui et 90 jours");
+        var existing = bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(), c.getId(),d);
+        if(desired!=null && desired==existing.isPresent()) return new BookResponse(true,desired);
         if (existing.isPresent()) {
             bookings.delete(existing.get());
             return new BookResponse(true, false);
         }
+        if(d.equals(today()) && java.time.LocalTime.parse(c.getTime()).isBefore(java.time.LocalTime.now(java.time.ZoneId.of("Africa/Tunis")))) throw ApiException.badRequest("Ce cours a déjà commencé");
+        if(Boolean.FALSE.equals(desired)) return new BookResponse(true,false);
         if (Objects.equals(c.coachId(), me.id())) throw ApiException.badRequest("Vous animez cette séance");
         User u = access.user(me.id());
-        if (u.getSubEnd() == null || u.getSubEnd().isBefore(LocalDate.now())) {
+        if (u.getSubEnd() == null || u.getSubEnd().isBefore(d)) {
             throw ApiException.forbidden("Abonnement actif requis pour réserver (voir Explorer → Tarifs)");
         }
-        if (bookings.countByClassSessionId(c.getId()) >= c.getSpots()) throw ApiException.conflict("Séance complète");
-        bookings.save(new Booking(u, c));
+        if (bookings.countByClassSessionIdAndSessionDate(c.getId(),d) >= c.getSpots()) throw ApiException.conflict("Séance complète");
+        DatedBooking booking=new DatedBooking(u,c);booking.setSessionDate(d);bookings.save(booking);
         return new BookResponse(true, true);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<ParticipantDto> participants(CurrentUser me, Long classId) {
+    public List<ParticipantDto> participants(CurrentUser me, Long classId, LocalDate requested) {
         ClassSession c = cls(classId);
         manage(me, c);
-        Set<Long> present = new HashSet<>(checkins.memberIdsPresent(LocalDate.now(), c.getTitle()));
-        return bookings.participants(c.getId()).stream()
-                .map(u -> new ParticipantDto(u.getId(), u.getName(), u.getPhone(), present.contains(u.getId()))).toList();
+        LocalDate d=date(c,requested);
+        return bookings.findByClassSessionIdAndSessionDate(c.getId(),d).stream().map(b -> new ParticipantDto(b.getUser().getId(),b.getUser().getName(),b.getUser().getPhone(),b.isPresent())).toList();
     }
 
     @Override
-    public void markPresent(CurrentUser me, Long classId, Long memberId) {
+    public void markPresent(CurrentUser me, Long classId, Long memberId, LocalDate requested) {
         ClassSession c = cls(classId);
         manage(me, c);
-        if (memberId == null || !bookings.existsByUserIdAndClassSessionId(memberId, c.getId())) {
-            throw ApiException.notFound("Ce membre n’a pas réservé cette séance");
-        }
-        LocalDate today = LocalDate.now();
-        if (c.getDay() != today.getDayOfWeek().getValue() - 1) throw ApiException.badRequest("Le pointage se fait le jour de la séance");
+        LocalDate today=date(c,requested);
+        var booking=bookings.findByUserIdAndClassSessionIdAndSessionDate(memberId,c.getId(),today).orElseThrow(()->ApiException.notFound("Réservation introuvable"));
+        if(!today.equals(today())) throw ApiException.badRequest("Le pointage se fait le jour de la séance");
+        booking.setPresent(true);
         if (!checkins.existsByMemberIdAndCheckinOnAndNote(memberId, today, c.getTitle())) {
             Checkin k = new Checkin();
             k.setMember(users.getReferenceById(memberId));

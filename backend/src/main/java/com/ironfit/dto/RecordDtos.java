@@ -15,9 +15,9 @@ import java.time.LocalDate;
 public final class RecordDtos {
     private RecordDtos() {}
 
-    public record PaymentDto(Long id, Long memberId, BigDecimal amount, String method, LocalDate paidOn, String note, String memberName) {
+    public record PaymentDto(Long id, Long memberId, BigDecimal amount, String method, LocalDate paidOn, String note, String memberName, String currency) {
         public static PaymentDto of(Payment p) {
-            return new PaymentDto(p.getId(), p.getMember().getId(), p.getAmount(), p.getMethod(), p.getPaidOn(), p.getNote(), p.getMember().getName());
+            return new PaymentDto(p.getId(), p.getMember().getId(), p.getAmount(), p.getMethod(), p.getPaidOn(), p.getNote(), p.getMember().getName(), p.getCurrency());
         }
     }
 

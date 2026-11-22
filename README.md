@@ -29,6 +29,7 @@ IronFit est une plateforme de gestion de salle de sport composée :
 17. [Dépannage](#17-dépannage)
 18. [Sécurité](#18-sécurité)
 19. [Limites connues et évolutions](#19-limites-connues-et-évolutions)
+20. [Stripe en mode test](#20-stripe-en-mode-test)
 
 ---
 
@@ -46,6 +47,8 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | **AI Coach** : conseils personnalisés à partir de ses programmes, séances, mesures et réservations | **AI Coach** : aide à la programmation et au suivi des clients (chiffres agrégés) | **AI Coach** : aide à la gestion de la salle (chiffres agrégés) |
 
 **AI Coach** : bouton flottant « AI Coach » en bas à droite de tous les onglets principaux, qui ouvre un chat (panneau latéral sur grand écran, feuille plein écran sur téléphone). Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
+
+**Parcours récents** : écran Abonnement unifié, conservation de l'état des onglets, réservations par date et par semaine, durées d'adhésion structurées, entraînements guidés avec séries / répétitions / charges et minuteur de repos, suivi du volume enregistré. Voir [les règles des réservations et adhésions](backend/DATED_MEMBERSHIPS.txt).
 
 **Interface** : identité visuelle noir / ambre / blanc tirée du logo, thèmes clair et sombre (suivant le système), logo officiel en grand sur l'écran de connexion et en filigrane discret sur les autres écrans, mise en page adaptée au téléphone (barre de navigation en bas) et au grand écran (rail latéral avec le logo dès 900 px).
 
@@ -68,13 +71,13 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | Contrôleurs | `controller` | Routes REST, validation des requêtes (`@Valid`), `@PreAuthorize` pour l'admin / le staff, codes HTTP |
 | Services | `service` (interfaces) + `service/impl` | Règles métier, contrôles de propriété (coach ↔ client), transactions, notifications |
 | Dépôts | `repository` | Spring Data JPA : CRUD + requêtes JPQL (recherche, portée coach, agrégats) |
-| Entités | `entity` | 18 entités JPA (`@Entity`), relations `@ManyToOne` avec `ON DELETE CASCADE / SET NULL` côté base |
+| Entités | `entity` | Entités JPA (`@Entity`), relations `@ManyToOne` avec `ON DELETE CASCADE / SET NULL` côté base |
 | DTO | `dto` | Objets de requête (validés) et de réponse (jamais l'entité ni le hachage du mot de passe) |
 | Sécurité | `security` | JWT (jjwt), filtre d'authentification, hachage bcrypt (+ lecture des anciens hachages scrypt), limitation de débit |
 | Configuration | `config` | Spring Security + CORS, Jackson, propriétés `ironfit.*`, données initiales, dialecte MariaDB de XAMPP |
 | Exceptions | `exception` | `ApiException` + `GlobalExceptionHandler` : réponses d'erreur JSON homogènes |
 
-Versions : **Java 17**, **Spring Boot 3.5.16** (dernière version de la branche 3.x), Hibernate 6.6, MySQL Connector/J, jjwt 0.13, Maven 3.9 (wrapper `mvnw` inclus).
+Versions : **Java 17**, **Spring Boot 3.5.16**, Hibernate 6.6, MySQL Connector/J, jjwt 0.13, Maven 3.9 (wrapper `mvnw` inclus).
 
 ### Frontend (Flutter, `app/`)
 
@@ -221,9 +224,11 @@ Le backend Spring Boot **ne s'exécute pas dans XAMPP** : XAMPP fournit uniqueme
 
 Quelques colonnes portent un nom différent du champ JSON car le mot est réservé en SQL : `exercises.load_text` (« load »), `exercises.day_label` (« day »), `promos.valid_until` (« until »), `classes.week_day` / `start_time` (« day » / « time »).
 
-### Migration depuis l'ancienne base SQLite (version Node.js)
+### Migration depuis une ancienne base SQLite (version Node.js)
 
-Les données de l'ancienne version (`backend/data/gym.db`) ont été **migrées dans `ironfit_db`** lors de la mise en place (7 comptes, cours, réservations, paiements, suivis, notifications). Les anciens mots de passe restent valables : ils sont vérifiés (scrypt) puis convertis en bcrypt à la première connexion. Pour refaire une migration :
+Cette migration est **facultative** et nécessite un fichier SQLite `gym.db` fourni séparément. Le fichier n'est pas inclus dans le dépôt et le dossier `backend/data/` est ignoré par Git. Sans ce fichier, démarrez simplement le backend sur une base neuve avec `SEED_DEMO=true`.
+
+Si vous possédez l'ancienne base, copiez-la dans `backend/data/gym.db`. Les anciens mots de passe sont alors conservés : ils sont vérifiés (scrypt) puis convertis en bcrypt à la première connexion. Pour faire la migration :
 
 ```bash
 # 1. Créer le schéma : lancer une fois le backend sur la base cible (SEED_DEMO=false), puis l'arrêter
@@ -435,34 +440,47 @@ Pour un téléphone réel : le backend écoute déjà sur toutes les interfaces 
 
 ## 15. Tests et compilation
 
-```bash
-# Backend : tests unitaires et d'intégration (MockMvc, base H2 en mode MySQL — XAMPP non requis)
-# AI Coach : faux serveur OpenRouter local, aucune vraie clé ni appel réseau
-cd backend
-.\mvnw.cmd test
+Depuis la racine du dépôt, dans PowerShell :
 
-# Application : analyse + 30 tests unitaires / widgets (dont 12 pour AI Coach, serveur simulé)
-cd app
+```powershell
+# AI Coach : faux serveur OpenRouter local, aucune vraie clé nécessaire
+# Backend : H2 en mémoire, sans toucher à la base MySQL de l'application
+cd backend
+.\mvnw.cmd clean test
+cd ../app
 flutter analyze
-flutter test --exclude-tags integration
+flutter test --concurrency=1
+```
 
-# Intégration Flutter ↔ Spring Boot ↔ MySQL (3 tests, modifient des données → base dédiée) — invite cmd
-cd backend
-set "DB_URL=jdbc:mysql://localhost:3306/ironfit_e2e?createDatabaseIfNotExist=true&connectionTimeZone=UTC"
-set "DDL_AUTO=create-drop"
-mvnw.cmd spring-boot:run
-# dans un autre terminal
-cd app
-flutter test test/backend_integration_test.dart        # IRONFIT_API_URL pour une autre adresse
+Pour inclure les tests Flutter qui modifient des données, utiliser une **nouvelle base dédiée** (choisir un nom neuf à chaque exécution) :
 
-# Compilation
-cd app
-flutter build web             # app/build/web
+```powershell
+# Terminal 1, depuis backend/
+$env:DB_URL='jdbc:mysql://localhost:3306/ironfit_e2e_fresh?createDatabaseIfNotExist=true'
+$env:PORT='8081'
+$env:RATE_LIMIT='1000'
+.\mvnw.cmd spring-boot:run
+```
+
+```powershell
+# Terminal 2, depuis app/
+$env:IRONFIT_API_URL='http://localhost:8081/api'
+flutter test --concurrency=1
+Remove-Item Env:IRONFIT_API_URL
+```
+
+Fermer le terminal du serveur de test après les essais pour ne pas réutiliser ses variables avec la base principale.
+
+```powershell
+# Depuis app/
+flutter build web
 flutter build windows         # Visual Studio requis
 flutter build apk --release   # SDK Android requis
 cd ../backend
-.\mvnw.cmd package            # backend/target/ironfit-backend-3.0.0.jar
+.\mvnw.cmd package            # target/ironfit-backend-3.0.0.jar
 ```
+
+Les tests Flutter qui modifient le backend exigent une variable `IRONFIT_API_URL` explicite et une base de démonstration neuve. Sans cette variable, ils sont ignorés. Ne jamais les diriger vers une base contenant des données à conserver.
 
 Couverture : authentification, jetons falsifiés, révocation, désactivation, réinitialisation, limitation de débit, erreurs HTTP, droits par rôle, isolation coach ↔ clients, double rôle, cycle programme → séance → commentaire → notifications, validation des cours / mesures / séances, annonces, abonnements, statistiques, connexion d'un compte migré (scrypt → bcrypt) ; côté Flutter : client API, migration de l'adresse et du jeton, navigation par rôle (téléphone et grand écran), logo et formulaires.
 
@@ -522,3 +540,100 @@ Les colonnes booléennes (`active`, `seen`) sont de type `bit(1)` et s'affichent
 - Planning hebdomadaire récurrent (pas de cours datés) ; limitation de débit en mémoire (une seule instance du serveur).
 - Listes affichées à partir du JSON (modèles typés pour l'utilisateur connecté uniquement).
 - Interface en français uniquement.
+
+## 20. Stripe en mode test
+
+Projet éducatif : **Sandbox uniquement**, clés `sk_test_`, nouveaux paiements en **EUR**. Le backend refuse les clés live et le mode réel. Changer simplement un indicateur ne permet pas de passer en production.
+
+### 20.1 Prix et fonctionnement
+
+| Formule | Prix confirmé | Paiement actuel |
+|---|---:|---|
+| Séance | 10 € | Achat unique |
+| Mensuel | 60 € | Achat unique, renouvellement manuel |
+| Trimestriel | 160 € | Achat unique, renouvellement manuel |
+| Annuel | 550 € | Achat unique |
+
+Les prix viennent des formules du backend ; ces montants sont les prix de démonstration approuvés, pas une conversion TND → EUR. Les anciens paiements TND conservent leur devise et leurs montants. Les montants Stripe EUR sont stockés en centimes, avec leur devise.
+
+Mensuel et Trimestriel restent volontairement des achats uniques. Les paramètres `STRIPE_PLAN_<id>_INTERVAL` / `INTERVAL_COUNT` sont réservés à une configuration récurrente explicitement approuvée ; ne pas les ajouter pour les formules actuelles.
+
+### 20.2 Configuration et lancement
+
+Copier `backend/.env.example` vers `backend/.env`, puis renseigner localement :
+
+```properties
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_TEST_MODE=true
+STRIPE_CURRENCY=eur
+STRIPE_RETURN_URL=http://localhost:5173
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_AUTOMATIC_TAX=false
+```
+
+Le fichier `.env` est exclu de Git. Spring importe `optional:file:.env[.properties]` relativement au répertoire de lancement : démarrer depuis **backend/**. Les variables d'environnement du processus peuvent surcharger ces valeurs. Ne pas ajouter de commentaire après une clé sur la même ligne et ne jamais publier les secrets.
+
+Dans des terminaux séparés, depuis les dossiers indiqués :
+
+```powershell
+# backend/
+.\mvnw.cmd spring-boot:run
+```
+
+```powershell
+# app/ — garder le même port pour le retour Stripe et la session connectée
+flutter run -d chrome --web-port=5173
+# Alternative sans lancement automatique du navigateur :
+# flutter run -d web-server --web-port=5173 --web-hostname=localhost
+```
+
+Après toute modification Java, compiler puis redémarrer le processus réel. Un ancien serveur sur 8080 ne charge pas automatiquement le nouveau JAR. Sous Windows, arrêter le JAR avant de le remplacer.
+
+### 20.3 Webhook local
+
+Utiliser la Stripe CLI connectée au **même Sandbox** que la clé du backend :
+
+```powershell
+stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,invoice.paid,invoice.payment_failed,customer.subscription.updated,customer.subscription.deleted --forward-to http://localhost:8080/api/payments/stripe/webhook
+```
+
+Copier le secret de signature de cette écoute dans `STRIPE_WEBHOOK_SECRET`, puis redémarrer Spring Boot. Vérifier sa correspondance après un changement de compte ou de configuration. Garder l'écoute active pendant les essais. Le chemin `/api/stripe/webhook` est incorrect.
+
+Le helper local `python -u scripts/stripe_test_listener.py`, lancé depuis `backend/`, utilise la clé de `.env` et masque les secrets dans sa sortie. Il requiert Python et la Stripe CLI installée via WinGet sous Windows. Il ne met pas à jour le secret de signature ni ne redémarre le backend automatiquement.
+
+### 20.4 Retour et confirmation
+
+1. Le membre choisit une formule ; le serveur crée une Checkout Session avec les prix du backend.
+2. Stripe renvoie vers `http://localhost:5173/?payment_order=<id>&payment_return=success` (ou `cancel`).
+3. Flutter restaure la connexion et ouvre le suivi du paiement sans rejouer l'animation d'introduction.
+4. Le webhook signé valide le règlement et met à jour le paiement et l'adhésion dans une transaction.
+5. La page interroge le statut avec une limite de tentatives. Pour une session terminée encore en attente, elle demande une vérification serveur et affiche la confirmation seulement lorsque le backend l'atteste.
+
+Le paramètre de retour ne prouve jamais le paiement. La route authentifiée `POST /api/payments/stripe/orders/{id}/reconcile` contrôle la propriété, l'environnement test, le client Stripe, les références, le montant et la devise. Les doublons ne doivent créer ni paiement local supplémentaire ni prolongation supplémentaire.
+
+En cas de paiement réussi mais encore en attente, vérifier le webhook, son secret et les journaux, puis utiliser « Vérifier le paiement ». **Ne pas payer une seconde fois pour débloquer un premier règlement.** Un événement original peut être redélivré depuis Stripe ; un événement générique de démonstration ne remplace pas la preuve de paiement de la commande.
+
+### 20.5 Taxes, factures et portail
+
+- `STRIPE_AUTOMATIC_TAX=false` désactive le calcul automatique des taxes. Son activation nécessite une configuration Stripe Tax valide et `STRIPE_PLAN_<id>_TAX_CODE` pour la formule concernée.
+- Les anciens paramètres `STRIPE_TAX_PERCENT` et `STRIPE_CREATE_INVOICE` ne pilotent pas le flux Checkout actuel. Ne pas en déduire une taxe de 19 % ni l'absence de facture.
+- Le Checkout d'achat unique demande la création d'une facture Stripe. Le lien disponible apparaît dans l'historique après traitement.
+- Le portail de facturation nécessite une configuration dans le même Sandbox et un client Stripe associé au membre. Une erreur de configuration n'active aucune adhésion.
+
+### 20.6 Vérification et limites
+
+Le [rapport du 16 novembre 2026](backend/STRIPE_VERIFICATION.txt) détaille la récupération des règlements, les contrôles de doublons et la préservation de l'historique TND : **70 tests backend** et **42 tests Flutter** réussis, y compris l'intégration Flutter sur une base dédiée. L'analyse Flutter sortait avec le code **1** pour **74 diagnostics informatifs**, sans avertissement ni erreur : ce n'est pas une analyse sans diagnostic.
+
+Le webhook réel a été vérifié par redélivrance d'événements Stripe Sandbox. L'utilisateur a confirmé l'affichage automatique après rafraîchissement de la page de retour ; un nouveau parcours navigateur ininterrompu n'a pas été observé indépendamment par l'agent.
+
+Ce projet n'autorise pas les paiements réels. Une éventuelle mise en production demanderait une revue distincte de l'éligibilité de l'entreprise, des coordonnées bancaires, de la fiscalité et de la sécurité ; sélectionner un pays dans Stripe ne suffit pas.
+
+## Vérification de l’intégration — 22 novembre 2026
+
+Intégration des améliorations IronFit avec AI Coach, la rétention et les e-mails du dépôt original. Les réservations transmises à AI Coach utilisent désormais les dates réelles ; les tarifs utilisent la devise de chaque formule.
+
+- Backend : 105 tests réussis sur H2, aucune base MySQL existante modifiée.
+- Flutter : 51 tests unitaires/widgets réussis, y compris AI Coach et retour Stripe. Les tests contre un serveur réel sont exclus de cette vérification.
+- Analyse Flutter : code 1, 77 diagnostics informatifs, sans avertissement ni erreur.
+- Aucun appel réel à OpenRouter ou Stripe effectué pendant cette intégration. Les validations Sandbox du 16 novembre concernent la version précédente.

@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class WorkoutServiceImpl implements WorkoutService {
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager em;
     private final WorkoutRepository workouts;
     private final ProgramRepository programs;
     private final UserRepository users;
@@ -54,6 +55,9 @@ public class WorkoutServiceImpl implements WorkoutService {
     @Override
     public IdResponse create(CurrentUser me, WorkoutRequest req) {
         AccessService.require(me.isMember());
+        String key=req.requestId()==null?null:me.id()+"-"+req.requestId();
+        em.find(com.ironfit.entity.User.class,me.id(),jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        if(key!=null){var previous=workouts.findBySubmissionKey(key);if(previous.isPresent())return new IdResponse(previous.get().getId());}
         LocalDate day = req.doneOn() == null ? LocalDate.now() : req.doneOn();
         if (day.isAfter(LocalDate.now())) throw ApiException.badRequest("La date ne peut pas être dans le futur");
         Program p = null;
@@ -62,6 +66,17 @@ public class WorkoutServiceImpl implements WorkoutService {
             AccessService.require(p.getClient().getId().equals(me.id()));
         }
         Workout w = new Workout();
+        w.setSubmissionKey(key);
+        if(req.sets()!=null && !req.sets().isEmpty()) {
+            if(p==null || key==null) throw ApiException.badRequest("Programme et identifiant de séance requis pour les séries");
+            var seen=new java.util.HashSet<String>();
+            for(var entry:req.sets()) {
+                var exercise=em.find(com.ironfit.entity.Exercise.class,entry.exerciseId());
+                if(exercise==null || !exercise.getProgram().getId().equals(p.getId())) throw ApiException.badRequest("Exercice absent de ce programme");
+                if(!seen.add(entry.exerciseId()+":"+entry.setNumber()))throw ApiException.badRequest("Série en double");
+                var set=new com.ironfit.entity.WorkoutSet();set.setExerciseId(exercise.getId());set.setExerciseName(exercise.getName());set.setSetNumber(entry.setNumber());set.setReps(entry.reps());set.setWeight(entry.weight());w.getSets().add(set);
+            }
+        }
         w.setUser(users.getReferenceById(me.id()));
         w.setProgram(p);
         w.setDoneOn(day);

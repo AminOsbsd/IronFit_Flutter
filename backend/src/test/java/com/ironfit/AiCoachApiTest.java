@@ -125,6 +125,26 @@ class AiCoachApiTest extends ApiTestSupport {
         return Map.of("messages", List.of(Map.of("role", "user", "content", text)));
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    com.ironfit.repository.DatedBookingRepository datedBookings;
+    @org.springframework.beans.factory.annotation.Autowired
+    com.ironfit.repository.ClassSessionRepository classSessions;
+
+    @Test
+    void coachUsesUpcomingDatedBookingsAndReflectsCancellation() throws Exception {
+        var user=users.findById(id("youssef")).orElseThrow();
+        var course=classSessions.findAll().get(0);
+        var booking=new com.ironfit.entity.DatedBooking(user,course);
+        var date=java.time.LocalDate.now().plusDays(45);
+        booking.setSessionDate(date);booking=datedBookings.save(booking);
+        String token=login("youssef");
+        assertThat(chat(token,ask("Mes cours réservés ?")).status()).isEqualTo(200);
+        assertThat(LAST.get().get("body")).contains(date.toString());
+        datedBookings.deleteById(booking.getId());
+        assertThat(chat(token,ask("Mes cours réservés ?")).status()).isEqualTo(200);
+        assertThat(LAST.get().get("body")).doesNotContain(date.toString());
+    }
+
     // ------------------------------------------------------------------ tests
 
     @Test
@@ -154,7 +174,7 @@ class AiCoachApiTest extends ApiTestSupport {
         assertThat(system).doesNotContain("Karray", "youssef@", "1234"); // ni nom de famille, ni e-mail, ni mot de passe
         // Base de connaissances (sans les lignes à compléter) et données vivantes de la salle
         assertThat(system).contains("Horaires : 7 h – 21 h en semaine", "Adresse : UNKNOWN (not provided by the gym").doesNotContain("COMPLÉTER");
-        assertThat(system).contains("Plan \"Mensuel\": 60 DT for 1 mois", "Weekly group class schedule", "Current offer \"Rentrée sportive\": 20 % off",
+        assertThat(system).contains("Plan \"Mensuel\": 60 EUR for 1 mois", "Weekly group class schedule", "Current offer \"Rentrée sportive\": 20 % off",
                 "Coaches (members can request one", "\"Amenez un ami\": FREE (100 % off)", "max capacity");
         // Calculs faits par le serveur (données de démo de Youssef)
         assertThat(system).contains("weight 82.5 kg on", "-> 80.6 kg on", "(change -1.9 kg)", "body fat 19.5 % -> 18.2 % (change -1.3 points)",

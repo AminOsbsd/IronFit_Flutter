@@ -62,7 +62,9 @@ public class MemberRecordServiceImpl implements MemberRecordService {
 
     private void apply(Payment p, PaymentRequest r) {
         p.setMember(access.member(r.memberId()));
+        if (p.getId() == null) p.setCurrency("EUR");
         p.setAmount(r.amount());
+        p.setAmountMinor(r.amount().movePointRight("EUR".equals(p.getCurrency()) ? 2 : 3).longValueExact());
         p.setMethod(Texts.clean(r.method()));
         p.setPaidOn(r.paidOn());
         p.setNote(Texts.clean(r.note()));

@@ -19,15 +19,15 @@ import java.time.LocalDate;
 public final class CatalogDtos {
     private CatalogDtos() {}
 
-    public record PlanDto(Long id, String name, BigDecimal price, String duration, String descr) {
-        public static PlanDto of(Plan p) { return new PlanDto(p.getId(), p.getName(), p.getPrice(), p.getDuration(), p.getDescr()); }
+    public record PlanDto(Long id, String name, BigDecimal price, String duration, String descr, String currency, String durationUnit, Integer durationCount, String accessType) {
+        public static PlanDto of(Plan p) { return new PlanDto(p.getId(), p.getName(), p.getPrice(), p.getDuration(), p.getDescr(), p.getCurrency(), p.getDurationUnit(), p.getDurationCount(), p.getAccessType()); }
     }
 
     public record PlanRequest(
             @NotBlank(message = "Champ obligatoire : Nom") @Size(max = 120, message = "Nom trop long") String name,
             @NotNull(message = "Champ obligatoire : Prix") @PositiveOrZero(message = "Valeur invalide : Prix") BigDecimal price,
             @Size(max = 60, message = "Durée trop longue") String duration,
-            @Size(max = 2000, message = "Description trop longue") String descr) {}
+            @Size(max = 2000, message = "Description trop longue") String descr, String durationUnit, Integer durationCount, String accessType) {}
 
     public record PromoDto(Long id, String title, String descr, Integer discount, LocalDate until) {
         public static PromoDto of(Promo p) { return new PromoDto(p.getId(), p.getTitle(), p.getDescr(), p.getDiscount(), p.getUntil()); }

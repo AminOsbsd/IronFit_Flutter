@@ -46,20 +46,31 @@ public final class ProgramDtos {
             @Min(value = 0, message = "Valeur invalide : Ordre") Integer position) {}
 
     public record WorkoutDto(Long id, Long userId, Long programId, LocalDate doneOn, Integer duration, Integer rpe, String notes, String coachComment,
-                             Instant created, String programTitle, Long coachId) {
+                             Instant created, String programTitle, Long coachId, List<SetDto> sets) {
         public static WorkoutDto of(Workout w) {
             var p = w.getProgram();
             return new WorkoutDto(w.getId(), w.getUser().getId(), p == null ? null : p.getId(), w.getDoneOn(), w.getDuration(), w.getRpe(), w.getNotes(),
-                    w.getCoachComment(), w.getCreated(), p == null ? null : p.getTitle(), p == null ? null : p.coachId());
+                    w.getCoachComment(), w.getCreated(), p == null ? null : p.getTitle(), p == null ? null : p.coachId(), w.getSets().stream().map(SetDto::of).toList());
         }
     }
+
+    public record SetDto(Long exerciseId, String exerciseName, Integer setNumber, Integer reps, java.math.BigDecimal weight) {
+        public static SetDto of(com.ironfit.entity.WorkoutSet s){return new SetDto(s.getExerciseId(),s.getExerciseName(),s.getSetNumber(),s.getReps(),s.getWeight());}
+    }
+    public record SetRequest(
+        @jakarta.validation.constraints.NotNull Long exerciseId,
+        @jakarta.validation.constraints.NotNull @Min(1) @Max(50) Integer setNumber,
+        @jakarta.validation.constraints.NotNull @Min(1) @Max(1000) Integer reps,
+        @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.DecimalMin("0") @jakarta.validation.constraints.DecimalMax("1000") @jakarta.validation.constraints.Digits(integer=4,fraction=2) java.math.BigDecimal weight) {}
 
     public record WorkoutRequest(
             Long programId,
             LocalDate doneOn,
             @Min(value = 1, message = "Durée : 1 à 600 minutes") @Max(value = 600, message = "Durée : 1 à 600 minutes") Integer duration,
             @Min(value = 1, message = "Difficulté : 1 à 10") @Max(value = 10, message = "Difficulté : 1 à 10") Integer rpe,
-            @Size(max = 1000, message = "Notes trop longues") String notes) {}
+            @Size(max = 1000, message = "Notes trop longues") String notes,
+            @jakarta.validation.constraints.Pattern(regexp="[a-zA-Z0-9-]{16,64}") String requestId,
+            @Size(max=500) List<@jakarta.validation.Valid @jakarta.validation.constraints.NotNull SetRequest> sets) {}
 
     public record FeedbackRequest(String comment) {}
 }

@@ -1,0 +1,30 @@
+Dated bookings and structured memberships
+
+On next backend startup (development DDL_AUTO=update), dated_bookings is created.
+Existing bookings remain archived in bookings. Each unmigrated legacy booking
+is copied ONCE to the next occurrence (today if the class has not started).
+The source row is marked migrated, so cancellation does not recreate it at restart.
+Existing memberships, payments, payment currencies, and subscription end dates
+are not rewritten by this change. Back up the database before deployment.
+
+GET /api/classes?week=YYYY-MM-DD returns the week's dated occurrences.
+Without week, existing clients receive the next occurrence of each class.
+POST /api/book accepts class_id, session_date, booked (true/false).
+Explicit booked is idempotent. Older clients without it retain toggle behavior.
+Membership must cover the selected date; booking window is 90 days.
+Capacity is serialized by a database lock on the class template.
+Participants accept ?date=YYYY-MM-DD; present accepts session_date.
+Attendance is attached to the dated booking; check-in history remains available.
+Class day changes with reservations are rejected to avoid orphaning dates.
+Weekly templates still define class times; there is no holiday exception editor yet.
+
+Plans expose duration_unit (DAY/MONTH), duration_count and access_type
+(PERIOD/DAY_PASS). Known legacy descriptions infer these once. Unknown durations
+require explicit staff configuration rather than silently granting 30 days.
+The existing single-session product was described as a day of gym access and
+is represented as DAY_PASS=1 DAY, not a visit-credit wallet.
+Expiry is inclusive: a new day pass ends today, a renewal starts after the current
+paid end date. Existing entitlement dates are retained until the next purchase.
+New Stripe orders snapshot the duration; existing orders keep old fulfillment
+rules. Stripe stays EUR TEST ONLY; recurring interval must match plan duration.
+No existing Stripe subscription is automatically repriced or converted.

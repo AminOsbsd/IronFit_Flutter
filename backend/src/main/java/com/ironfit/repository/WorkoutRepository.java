@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface WorkoutRepository extends JpaRepository<Workout, Long> {
+    java.util.Optional<Workout> findBySubmissionKey(String key);
     @Query("select w from Workout w left join fetch w.program where w.program.id = :programId order by w.doneOn desc, w.id desc")
     List<Workout> findForProgram(@Param("programId") Long programId, Pageable page);
 

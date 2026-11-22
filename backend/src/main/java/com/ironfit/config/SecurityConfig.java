@@ -49,7 +49,7 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(handlers).accessDeniedHandler(handlers))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/signup", "/api/login", "/api/forgot", "/api/reset").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/signup", "/api/login", "/api/forgot", "/api/reset", "/api/payments/stripe/webhook").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())

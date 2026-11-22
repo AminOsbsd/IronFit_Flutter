@@ -5,12 +5,30 @@ import 'user_service.dart' show Json;
 class PlanningService {
   PlanningService._();
 
-  static Future<List<Json>> classes() => Api.list('classes');
+  static Future<List<Json>> classes({String? week}) =>
+      Api.list(week == null ? 'classes' : 'classes?week=$week');
 
   /// Réserve ou annule (bascule) ; renvoie true si le cours est maintenant réservé.
-  static Future<bool> toggleBooking(int classId) async => (await Api.post('book', {'class_id': classId}))['booked'] == true;
+  static Future<bool> toggleBooking(
+    int classId, {
+    String? date,
+    bool? booked,
+  }) async =>
+      (await Api.post('book', {
+        'class_id': classId,
+        if (date != null) 'session_date': date,
+        if (booked != null) 'booked': booked,
+      }))['booked'] ==
+      true;
 
-  static Future<List<Json>> participants(int classId) => Api.list('classes/$classId/participants');
+  static Future<List<Json>> participants(int classId, {String? date}) =>
+      Api.list(
+        'classes/$classId/participants${date == null ? '' : '?date=$date'}',
+      );
 
-  static Future<void> markPresent(int classId, int memberId) => Api.post('classes/$classId/present', {'member_id': memberId});
+  static Future<void> markPresent(int classId, int memberId, {String? date}) =>
+      Api.post('classes/$classId/present', {
+        'member_id': memberId,
+        if (date != null) 'session_date': date,
+      });
 }

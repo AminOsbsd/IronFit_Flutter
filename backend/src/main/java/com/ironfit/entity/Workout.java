@@ -17,6 +17,11 @@ import org.hibernate.annotations.OnDeleteAction;
 public class Workout {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    @Column(unique=true, length=100) private String submissionKey;
+    @ElementCollection
+    @CollectionTable(name="workout_sets",joinColumns=@JoinColumn(name="workout_id"))
+    @OrderColumn(name="set_position")
+    private java.util.List<WorkoutSet> sets = new java.util.ArrayList<>();
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)

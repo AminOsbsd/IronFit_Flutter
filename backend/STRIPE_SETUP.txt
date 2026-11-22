@@ -1,0 +1,57 @@
+IronFit - Educational Stripe EUR integration
+
+TEST ONLY. No registered French business is being claimed. sk_live_ and live
+webhook events remain rejected. No live activation is configured or authorized.
+The configured French test account supports EUR; this does not establish live eligibility.
+
+Approved new membership prices: Séance EUR 10; Mensuel EUR 60;
+Trimestriel EUR 160; Annuel EUR 550. These are explicit user-approved prices,
+not a currency conversion. On startup existing matching TND plans are updated
+once to these approved EUR prices. Other legacy plans retain TND and cannot
+be purchased via Stripe until an EUR price is explicitly approved/configured.
+New plans created by the admin use EUR.
+
+Restart the backend from backend/ so .env is loaded. Development DDL_AUTO=update
+adds currency to plans, payments, stripe_orders and amount_minor to payments.
+Legacy currency defaults to TND; original payment amounts are preserved.
+Legacy payment minor amounts are backfilled as millimes, EUR uses integer cents.
+Revenue totals are grouped by currency. Merchandise prices remain TND, since
+no EUR merchandise prices were approved.
+
+STRIPE_SECRET_KEY=sk_test_... (never commit or expose)
+STRIPE_TEST_MODE=true (false rejected)
+STRIPE_CURRENCY=eur (other new-payment currencies rejected)
+STRIPE_WEBHOOK_SECRET=whsec_... from the real local listener/endpoint
+STRIPE_RETURN_URL=http://localhost:5173 (set to the actual frontend port)
+STRIPE_AUTOMATIC_TAX=false until test Tax configuration is ready
+
+Install official Stripe CLI https://docs.stripe.com/stripe-cli and authenticate
+with the SAME test account. Keep this running:
+stripe listen --forward-to localhost:8080/api/payments/stripe/webhook
+Put its signing secret in .env then restart backend. API keys and webhook signing
+secrets are different. Never fabricate a signing secret.
+Listen for checkout.session.completed, checkout.session.expired,
+checkout.session.async_payment_succeeded, checkout.session.async_payment_failed,
+invoice.paid, invoice.payment_failed, customer.subscription.updated/deleted.
+
+One-time Checkout has invoice_creation enabled. Subscriptions create invoices
+in the currency of their EUR prices, and renewal uses that subscription currency.
+Configure recurrence only for actual plan IDs via STRIPE_PLAN_N_INTERVAL and
+STRIPE_PLAN_N_INTERVAL_COUNT. Legacy Stripe subscriptions and orders are not
+repriced or converted: they retain original currency and fulfillment semantics.
+A new EUR subscription must be purchased separately after managing any old one.
+Use the test customer portal for cancellation/payment-method updates; do not
+enable plan switching, trials or proration without corresponding access policies.
+
+For Stripe Tax configure the account test tax origin/registrations and real plan
+tax codes STRIPE_PLAN_N_TAX_CODE; then enable STRIPE_AUTOMATIC_TAX. Prices are
+exclusive of configured taxes. No fixed tax percentage is invented.
+
+Verify a successful checkout with 4242 4242 4242 4242 (test card only), a declined
+card and cancellation; inspect the EUR invoice, verified membership activation,
+recurring invoice renewal, and unchanged TND history. Signed automated fixtures
+are regression coverage and do not replace actual end-to-end Stripe testing.
+
+Docs: https://docs.stripe.com/currencies
+https://docs.stripe.com/checkout/fulfillment
+https://docs.stripe.com/testing

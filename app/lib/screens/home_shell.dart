@@ -1,4 +1,7 @@
+import 'gym_location_screen.dart';
+
 import 'package:flutter/material.dart';
+
 import '../core/network/api_client.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/brand.dart';
@@ -35,10 +38,24 @@ class _Dest {
 
 class _HomeShellState extends State<HomeShell> {
   int tab = 0;
+  String? _scope;
+  final Set<int> _visited = {0};
 
-  static const _home = _Dest(Icons.home_outlined, Icons.home_rounded, 'Accueil');
-  static const _plan = _Dest(Icons.event_outlined, Icons.event_rounded, 'Planning');
-  static const _prof = _Dest(Icons.person_outline_rounded, Icons.person_rounded, 'Profil');
+  static const _home = _Dest(
+    Icons.home_outlined,
+    Icons.home_rounded,
+    'Accueil',
+  );
+  static const _plan = _Dest(
+    Icons.event_outlined,
+    Icons.event_rounded,
+    'Planning',
+  );
+  static const _prof = _Dest(
+    Icons.person_outline_rounded,
+    Icons.person_rounded,
+    'Profil',
+  );
 
   void go(int i) => setState(() => tab = i);
 
@@ -50,57 +67,154 @@ class _HomeShellState extends State<HomeShell> {
         final List<Widget> pages;
         final List<_Dest> dests;
         if (Api.isAdmin) {
-          pages = const [AdminHome(), PlanningPage(manage: true), ModulesGrid(), ProfilePage()];
-          dests = const [_home, _plan, _Dest(Icons.admin_panel_settings_outlined, Icons.admin_panel_settings_rounded, 'Administration'), _prof];
+          pages = const [
+            AdminHome(),
+            PlanningPage(manage: true),
+            ModulesGrid(),
+            ProfilePage(),
+          ];
+          dests = const [
+            _home,
+            _plan,
+            _Dest(
+              Icons.admin_panel_settings_outlined,
+              Icons.admin_panel_settings_rounded,
+              'Administration',
+            ),
+            _prof,
+          ];
         } else if (Api.inCoachSpace) {
-          pages = const [CoachHome(), PlanningPage(manage: true), ClientsPage(), ModulesGrid(), ProfilePage()];
-          dests = const [_home, _plan, _Dest(Icons.groups_outlined, Icons.groups_rounded, 'Clients'), _Dest(Icons.apps_outlined, Icons.apps_rounded, 'Gestion'), _prof];
+          pages = const [
+            CoachHome(),
+            PlanningPage(manage: true),
+            ClientsPage(),
+            ModulesGrid(),
+            ProfilePage(),
+          ];
+          dests = const [
+            _home,
+            _plan,
+            _Dest(Icons.groups_outlined, Icons.groups_rounded, 'Clients'),
+            _Dest(Icons.apps_outlined, Icons.apps_rounded, 'Gestion'),
+            _prof,
+          ];
         } else {
-          pages = [MemberHome(goTab: go), const PlanningPage(), const ExplorePage(), const MySpacePage(), const ProfilePage()];
-          dests = const [_home, _plan, _Dest(Icons.explore_outlined, Icons.explore_rounded, 'Explorer'), _Dest(Icons.fitness_center_outlined, Icons.fitness_center_rounded, 'Mon espace'), _prof];
+          pages = [
+            MemberHome(goTab: go),
+            const PlanningPage(),
+            const ExplorePage(),
+            const MySpacePage(),
+            const ProfilePage(),
+          ];
+          dests = const [
+            _home,
+            _plan,
+            _Dest(Icons.explore_outlined, Icons.explore_rounded, 'Explorer'),
+            _Dest(
+              Icons.fitness_center_outlined,
+              Icons.fitness_center_rounded,
+              'Mon espace',
+            ),
+            _prof,
+          ];
+        }
+        final scope = '${Api.myId}-${Api.role}-${ws.name}';
+        if (_scope != scope) {
+          _scope = scope;
+          tab = 0;
+          _visited.clear();
         }
         if (tab >= pages.length) tab = 0;
+        _visited.add(tab);
         // La clé force la reconstruction des pages quand le coach change d'espace
-        final body = KeyedSubtree(key: ValueKey('${Api.role}-${ws.name}-$tab'), child: pages[tab]);
+        final body = IndexedStack(
+          key: ValueKey(scope),
+          index: tab,
+          children: [
+            for (var i = 0; i < pages.length; i++)
+              TickerMode(
+                enabled: i == tab,
+                child: _visited.contains(i)
+                    ? pages[i]
+                    : const SizedBox.shrink(),
+              ),
+          ],
+        );
         final width = MediaQuery.sizeOf(context).width;
 
         if (width >= 900) {
           final extended = width >= 1200;
           return Scaffold(
             floatingActionButton: const AiCoachButton(extended: true),
-            body: Row(children: [
-              NavigationRail(
-                extended: extended,
-                minExtendedWidth: 220,
-                selectedIndex: tab,
-                onDestinationSelected: go,
-                labelType: extended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-                leading: Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 12),
-                  child: Column(children: [
-                    ClipRRect(borderRadius: BorderRadius.circular(16), child: BrandLogo(size: extended ? 132 : 72)),
-                    if (Api.isCoach) ...[const SizedBox(height: 12), _RailWorkspaceToggle(extended: extended, onChanged: () => setState(() => tab = 0))],
-                  ]),
+            body: Row(
+              children: [
+                NavigationRail(
+                  extended: extended,
+                  minExtendedWidth: 220,
+                  selectedIndex: tab,
+                  onDestinationSelected: go,
+                  labelType: extended
+                      ? NavigationRailLabelType.none
+                      : NavigationRailLabelType.all,
+                  leading: Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 12),
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: BrandLogo(size: extended ? 132 : 72),
+                        ),
+                        if (Api.isCoach) ...[
+                          const SizedBox(height: 12),
+                          _RailWorkspaceToggle(
+                            extended: extended,
+                            onChanged: () => setState(() => tab = 0),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  destinations: [
+                    for (final d in dests)
+                      NavigationRailDestination(
+                        icon: Icon(d.icon),
+                        selectedIcon: Icon(d.selected),
+                        label: Text(d.label),
+                      ),
+                  ],
                 ),
-                destinations: [for (final d in dests) NavigationRailDestination(icon: Icon(d.icon), selectedIcon: Icon(d.selected), label: Text(d.label))],
-              ),
-              VerticalDivider(width: 1, color: Theme.of(context).colorScheme.outlineVariant),
-              Expanded(child: body),
-            ]),
+                VerticalDivider(
+                  width: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                Expanded(child: body),
+              ],
+            ),
           );
         }
 
         return Scaffold(
           body: body,
           floatingActionButton: const AiCoachButton(),
-          bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (Api.isCoach) WorkspaceSwitch(onChanged: () => setState(() => tab = 0)),
-            NavigationBar(
-              selectedIndex: tab,
-              onDestinationSelected: go,
-              destinations: [for (final d in dests) NavigationDestination(icon: Icon(d.icon), selectedIcon: Icon(d.selected), label: d.label)],
-            ),
-          ]),
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (Api.isCoach)
+                WorkspaceSwitch(onChanged: () => setState(() => tab = 0)),
+              NavigationBar(
+                selectedIndex: tab,
+                onDestinationSelected: go,
+                destinations: [
+                  for (final d in dests)
+                    NavigationDestination(
+                      icon: Icon(d.icon),
+                      selectedIcon: Icon(d.selected),
+                      label: d.label,
+                    ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -115,15 +229,25 @@ class WorkspaceSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).brightness == Brightness.dark ? cs.surfaceContainerLow : Colors.white,
+      color: Theme.of(context).brightness == Brightness.dark
+          ? cs.surfaceContainerLow
+          : Colors.white,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
         child: SizedBox(
           width: double.infinity,
           child: SegmentedButton<Workspace>(
             segments: const [
-              ButtonSegment(value: Workspace.personal, icon: Icon(Icons.fitness_center_rounded), label: Text('Mon entraînement')),
-              ButtonSegment(value: Workspace.coach, icon: Icon(Icons.sports_rounded), label: Text('Espace coach')),
+              ButtonSegment(
+                value: Workspace.personal,
+                icon: Icon(Icons.fitness_center_rounded),
+                label: Text('Mon entraînement'),
+              ),
+              ButtonSegment(
+                value: Workspace.coach,
+                icon: Icon(Icons.sports_rounded),
+                label: Text('Espace coach'),
+              ),
             ],
             selected: {Api.workspace.value},
             onSelectionChanged: (s) async {
@@ -147,8 +271,16 @@ class _RailWorkspaceToggle extends StatelessWidget {
     Widget item(Workspace w, IconData icon, String label) {
       final selected = Api.workspace.value == w;
       final style = selected
-          ? FilledButton.styleFrom(backgroundColor: AppColors.amber, foregroundColor: AppColors.ink, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10))
-          : FilledButton.styleFrom(backgroundColor: Colors.transparent, foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10));
+          ? FilledButton.styleFrom(
+              backgroundColor: AppColors.amber,
+              foregroundColor: AppColors.ink,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            )
+          : FilledButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            );
       final onTap = selected
           ? null
           : () async {
@@ -162,22 +294,44 @@ class _RailWorkspaceToggle extends StatelessWidget {
           child: SizedBox(
             width: extended ? 196 : 64,
             child: FilledButton(
-              style: style.copyWith(foregroundColor: WidgetStatePropertyAll(selected ? AppColors.ink : Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: style.copyWith(
+                foregroundColor: WidgetStatePropertyAll(
+                  selected
+                      ? AppColors.ink
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
               onPressed: onTap ?? () {},
-              child: Row(mainAxisAlignment: extended ? MainAxisAlignment.start : MainAxisAlignment.center, children: [
-                Icon(icon, size: 20),
-                if (extended) ...[const SizedBox(width: 10), Flexible(child: Text(label, overflow: TextOverflow.ellipsis))],
-              ]),
+              child: Row(
+                mainAxisAlignment: extended
+                    ? MainAxisAlignment.start
+                    : MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 20),
+                  if (extended) ...[
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(label, overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
       );
     }
 
-    return Column(children: [
-      item(Workspace.personal, Icons.fitness_center_rounded, 'Mon entraînement'),
-      item(Workspace.coach, Icons.sports_rounded, 'Espace coach'),
-    ]);
+    return Column(
+      children: [
+        item(
+          Workspace.personal,
+          Icons.fitness_center_rounded,
+          'Mon entraînement',
+        ),
+        item(Workspace.coach, Icons.sports_rounded, 'Espace coach'),
+      ],
+    );
   }
 }
 
@@ -185,20 +339,45 @@ class _RailWorkspaceToggle extends StatelessWidget {
 class ModulesGrid extends StatelessWidget {
   const ModulesGrid({super.key});
 
-  Widget tile(BuildContext context, IconData icon, String title, String subtitle, Widget page) {
+  Widget tile(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String subtitle,
+    Widget page,
+  ) {
     final cs = Theme.of(context).colorScheme;
     return Card(
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+        onTap: () =>
+            Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            IconBadge(icon),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: Theme.of(context).textTheme.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ]),
-          ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconBadge(icon),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -207,7 +386,13 @@ class ModulesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Paiements : en gestion, réservé à l'admin (le coach consulte les siens dans « Mon entraînement »)
-    final list = modules.where((m) => m.read.contains(Api.role) && (Api.isAdmin || m.write.contains(Api.role))).toList();
+    final list = modules
+        .where(
+          (m) =>
+              m.read.contains(Api.role) &&
+              (Api.isAdmin || m.write.contains(Api.role)),
+        )
+        .toList();
     return Scaffold(
       appBar: AppBar(title: Text(Api.isAdmin ? 'Administration' : 'Gestion')),
       body: GridView.extent(
@@ -218,11 +403,38 @@ class ModulesGrid extends StatelessWidget {
         crossAxisSpacing: 8,
         children: [
           if (Api.isAdmin) ...[
-            tile(context, Icons.assignment_ind_rounded, 'Demandes d\'abonnement', 'Valider les paiements', const RequestsPage()),
-            tile(context, Icons.handshake_rounded, 'Suivis coaching', 'Relations coach / client', const CoachingAdminPage()),
-            tile(context, Icons.trending_down_rounded, 'Membres à risque', 'Détecter et relancer', const RiskPage()),
+            tile(
+              context,
+              Icons.assignment_ind_rounded,
+              'Demandes d\'abonnement',
+              'Valider les paiements',
+              const RequestsPage(),
+            ),
+            tile(
+              context,
+              Icons.handshake_rounded,
+              'Suivis coaching',
+              'Relations coach / client',
+              const CoachingAdminPage(),
+            ),
+            tile(
+              context,
+              Icons.trending_down_rounded,
+              'Membres à risque',
+              'Détecter et relancer',
+              const RiskPage(),
+            ),
           ],
-          for (final m in list) tile(context, m.icon, m.title, m.write.contains(Api.role) ? 'Consulter et modifier' : 'Consulter', CrudPage(m)),
+          for (final m in list)
+            tile(
+              context,
+              m.icon,
+              m.title,
+              m.write.contains(Api.role)
+                  ? 'Consulter et modifier'
+                  : 'Consulter',
+              CrudPage(m),
+            ),
         ],
       ),
     );
@@ -239,7 +451,9 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   Future<void> _edit() async {
     final me = Api.user!;
-    final n = TextEditingController(text: me.name), e = TextEditingController(text: me.email), p = TextEditingController(text: me.phone ?? '');
+    final n = TextEditingController(text: me.name),
+        e = TextEditingController(text: me.email),
+        p = TextEditingController(text: me.phone ?? '');
     final s = TextEditingController(text: me.specialty ?? '');
     String? err;
     await showDialog<void>(
@@ -248,25 +462,69 @@ class _ProfilePageState extends State<ProfilePage> {
         builder: (d, set) => AlertDialog(
           title: const Text('Mes informations'),
           content: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: n, decoration: const InputDecoration(labelText: 'Nom complet', prefixIcon: Icon(Icons.badge_outlined))),
-              const SizedBox(height: 10),
-              TextField(controller: e, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'E-mail', prefixIcon: Icon(Icons.mail_outline))),
-              const SizedBox(height: 10),
-              TextField(controller: p, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Téléphone', prefixIcon: Icon(Icons.phone_outlined))),
-              if (Api.isCoach) ...[
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: n,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom complet',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
                 const SizedBox(height: 10),
-                TextField(controller: s, decoration: const InputDecoration(labelText: 'Spécialité (visible par les membres)', prefixIcon: Icon(Icons.sports_outlined))),
+                TextField(
+                  controller: e,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'E-mail',
+                    prefixIcon: Icon(Icons.mail_outline),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: p,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Téléphone',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                ),
+                if (Api.isCoach) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: s,
+                    decoration: const InputDecoration(
+                      labelText: 'Spécialité (visible par les membres)',
+                      prefixIcon: Icon(Icons.sports_outlined),
+                    ),
+                  ),
+                ],
+                if (err != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(
+                      err!,
+                      style: TextStyle(color: Theme.of(d).colorScheme.error),
+                    ),
+                  ),
               ],
-              if (err != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(err!, style: TextStyle(color: Theme.of(d).colorScheme.error))),
-            ]),
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Annuler')),
+            TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('Annuler'),
+            ),
             FilledButton(
               onPressed: () async {
                 try {
-                  await AuthService.updateProfile(name: n.text, email: e.text, phone: p.text, specialty: Api.isCoach ? s.text : null);
+                  await AuthService.updateProfile(
+                    name: n.text,
+                    email: e.text,
+                    phone: p.text,
+                    specialty: Api.isCoach ? s.text : null,
+                  );
                   if (d.mounted) Navigator.pop(d);
                   if (mounted) setState(() {});
                 } catch (x) {
@@ -289,18 +547,52 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (d) => StatefulBuilder(
         builder: (d, set) => AlertDialog(
           title: const Text('Changer le mot de passe'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: o, obscureText: true, decoration: const InputDecoration(labelText: 'Ancien mot de passe', prefixIcon: Icon(Icons.lock_outline))),
-            const SizedBox(height: 10),
-            TextField(controller: n, obscureText: true, decoration: const InputDecoration(labelText: 'Nouveau (6 car. min.)', prefixIcon: Icon(Icons.lock_reset_outlined))),
-            const Padding(padding: EdgeInsets.only(top: 10), child: Text('Vos autres appareils seront déconnectés.', style: TextStyle(fontSize: 12))),
-            if (err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(err!, style: TextStyle(color: Theme.of(d).colorScheme.error))),
-          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: o,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Ancien mot de passe',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: n,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nouveau (6 car. min.)',
+                  prefixIcon: Icon(Icons.lock_reset_outlined),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text(
+                  'Vos autres appareils seront déconnectés.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+              if (err != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    err!,
+                    style: TextStyle(color: Theme.of(d).colorScheme.error),
+                  ),
+                ),
+            ],
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Annuler')),
+            TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('Annuler'),
+            ),
             FilledButton(
               onPressed: () async {
-                if (n.text.length < 6) return set(() => err = '6 caractères minimum');
+                if (n.text.length < 6)
+                  return set(() => err = '6 caractères minimum');
                 try {
                   await AuthService.changePassword(o.text, n.text);
                   if (d.mounted) Navigator.pop(d);
@@ -317,48 +609,113 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget action(IconData icon, String title, {String? subtitle, VoidCallback? onTap, Color? color}) => Card(
-        child: ListTile(
-          leading: IconBadge(icon, color: color),
-          title: Text(title, style: color == null ? null : TextStyle(color: color, fontWeight: FontWeight.w700)),
-          subtitle: subtitle == null ? null : Text(subtitle),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: onTap,
-        ),
-      );
+  Widget action(
+    IconData icon,
+    String title, {
+    String? subtitle,
+    VoidCallback? onTap,
+    Color? color,
+  }) => Card(
+    child: ListTile(
+      leading: IconBadge(icon, color: color),
+      title: Text(
+        title,
+        style: color == null
+            ? null
+            : TextStyle(color: color, fontWeight: FontWeight.w700),
+      ),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final me = Api.user!;
-    final roleText = me.isCoach ? 'Coach · membre${me.specialty == null ? '' : ' · ${me.specialty}'}' : (roleLabels[me.role] ?? '');
+    final roleText = me.isCoach
+        ? 'Coach · membre${me.specialty == null ? '' : ' · ${me.specialty}'}'
+        : (roleLabels[me.role] ?? '');
     return Scaffold(
       appBar: AppBar(title: const Text('Profil')),
-      body: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
-        HeroCard(
-          child: Row(children: [
-            InitialAvatar(me.name, radius: 30),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(me.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text('@${me.login} · $roleText', style: const TextStyle(color: Colors.white70)),
-                Text(me.email, style: const TextStyle(color: Colors.white70)),
-                if ((me.phone ?? '').isNotEmpty) Text(me.phone!, style: const TextStyle(color: Colors.white70)),
-              ]),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        children: [
+          HeroCard(
+            child: Row(
+              children: [
+                InitialAvatar(me.name, radius: 30),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        me.name,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '@${me.login} · $roleText',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      Text(
+                        me.email,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      if ((me.phone ?? '').isNotEmpty)
+                        Text(
+                          me.phone!,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ]),
-        ),
-        const SectionHeader('Compte'),
-        action(Icons.edit_outlined, 'Modifier mes informations', onTap: _edit),
-        action(Icons.lock_outline, 'Changer le mot de passe', onTap: _changePw),
-        const SectionHeader('Application'),
-        action(Icons.dns_outlined, 'Adresse du serveur', subtitle: Api.base, onTap: () async {
-          await serverDialog(context);
-          if (mounted) setState(() {});
-        }),
-        action(Icons.logout_rounded, 'Se déconnecter', color: Theme.of(context).colorScheme.error, onTap: () => AuthService.logout()),
-      ]),
+          ),
+          const SectionHeader('Compte'),
+          action(
+            Icons.edit_outlined,
+            'Modifier mes informations',
+            onTap: _edit,
+          ),
+          action(
+            Icons.lock_outline,
+            'Changer le mot de passe',
+            onTap: _changePw,
+          ),
+          const SectionHeader('Notre salle'),
+          action(
+            Icons.location_on_outlined,
+            'Nous trouver',
+            subtitle: 'Adresse et itinéraire',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GymLocationPage()),
+            ),
+          ),
+          const SectionHeader('Application'),
+          action(
+            Icons.dns_outlined,
+            'Adresse du serveur',
+            subtitle: Api.base,
+            onTap: () async {
+              await serverDialog(context);
+              if (mounted) setState(() {});
+            },
+          ),
+          action(
+            Icons.logout_rounded,
+            'Se déconnecter',
+            color: Theme.of(context).colorScheme.error,
+            onTap: () => AuthService.logout(),
+          ),
+        ],
+      ),
     );
   }
 }

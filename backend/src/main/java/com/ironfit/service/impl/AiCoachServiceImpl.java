@@ -33,7 +33,7 @@ public class AiCoachServiceImpl implements AiCoachService {
     private final WorkoutRepository workouts;
     private final MeasureRepository measures;
     private final CheckinRepository checkins;
-    private final BookingRepository bookings;
+    private final DatedBookingRepository bookings;
     private final ClassSessionRepository classes;
     private final CoachClientRepository links;
     private final PlanRepository plans;
@@ -41,7 +41,7 @@ public class AiCoachServiceImpl implements AiCoachService {
     private final KnowledgeBase knowledge;
 
     public AiCoachServiceImpl(UserRepository users, ProgramRepository programs, ExerciseRepository exercises, WorkoutRepository workouts,
-                              MeasureRepository measures, CheckinRepository checkins, BookingRepository bookings,
+                              MeasureRepository measures, CheckinRepository checkins, DatedBookingRepository bookings,
                               ClassSessionRepository classes, CoachClientRepository links, PlanRepository plans,
                               PromoRepository promos, KnowledgeBase knowledge) {
         this.users = users;
@@ -106,7 +106,7 @@ public class AiCoachServiceImpl implements AiCoachService {
         List<Plan> allPlans = plans.search(null, PageRequest.of(0, 20));
         if (allPlans.isEmpty()) f.add("Subscription plans: none listed");
         for (Plan p : allPlans) {
-            f.add("Plan \"" + clip(p.getName(), 60) + "\": " + money(p.getPrice()) + " DT"
+            f.add("Plan \"" + clip(p.getName(), 60) + "\": " + money(p.getPrice()) + " " + p.getCurrency()
                     + (p.getDuration() == null || p.getDuration().isBlank() ? "" : " for " + clip(p.getDuration(), 40))
                     + (p.getDescr() == null || p.getDescr().isBlank() ? "" : " (" + clip(p.getDescr(), 120) + ")"));
         }
@@ -209,14 +209,15 @@ public class AiCoachServiceImpl implements AiCoachService {
         if (trend != null) f.add(trend);
 
         // Cours réservés
-        List<ClassSession> booked = classes.findAllById(bookings.classIdsBookedBy(id)).stream()
-                .sorted(Comparator.comparing((ClassSession c) -> c.getDay() == null ? 9 : c.getDay()).thenComparing(c -> String.valueOf(c.getTime())))
-                .limit(10).toList();
-        if (booked.isEmpty()) f.add("Booked weekly classes: none");
+        var booked = bookings.findTop10ByUserIdAndSessionDateGreaterThanEqualOrderBySessionDateAsc(id, today);
+        if (booked.isEmpty()) f.add("Booked dated classes: none");
         else {
             StringJoiner j = new StringJoiner(", ");
-            for (ClassSession c : booked) j.add(clip(c.getTitle(), 60) + " on " + day(c.getDay()) + " at " + c.getTime());
-            f.add("Booked weekly classes: " + j);
+            for (var booking : booked) {
+                var c = booking.getClassSession();
+                j.add(clip(c.getTitle(), 60) + " on " + booking.getSessionDate() + " at " + c.getTime());
+            }
+            f.add("Booked dated classes: " + j);
         }
         return f;
     }

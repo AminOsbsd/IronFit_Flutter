@@ -76,6 +76,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> notFound(NoResourceFoundException e) { return reply(HttpStatus.NOT_FOUND, "Route inconnue"); }
 
+    @ExceptionHandler(com.stripe.exception.StripeException.class)
+    public ResponseEntity<ErrorResponse> stripe(com.stripe.exception.StripeException e) {
+        log.warn("Stripe request failed: {} ({})", e.getCode(), e.getRequestId());
+        return reply(HttpStatus.BAD_GATEWAY, "Stripe est indisponible ou mal configuré. Réessayez ou contactez la salle.");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> unexpected(Exception e, HttpServletRequest req) {
         log.error("Erreur inattendue sur {} {}", req.getMethod(), req.getRequestURI(), e);
