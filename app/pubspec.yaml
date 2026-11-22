@@ -28,5 +28,7 @@ flutter:
   uses-material-design: true
   # Logo officiel IronFit (original + variante sans fond pour le filigrane)
   assets:
+    - assets/images/member_fitness_3d.png
+    - assets/images/member_strength_3d.png
     - assets/images/ironfit_logo.png
     - assets/images/ironfit_logo_transparent.png

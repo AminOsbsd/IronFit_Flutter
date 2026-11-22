@@ -58,8 +58,10 @@ class ClassAndDataApiTest extends ApiTestSupport {
         int today = LocalDate.now().getDayOfWeek().getValue() - 1;
         long todayClass = post("classes", Map.of("day", today, "time", "23:59", "title", "Réveil"), sami).body().get("id").asLong();
         post("book", Map.of("class_id", todayClass), youssef);
+        assertThat(post("classes/" + todayClass + "/present", Map.of("member_id", id("youssef")), sami).status()).isEqualTo(400);
+        call("PUT", "classes/" + todayClass, Map.of("day", today, "time", "00:00", "title", "Réveil"), sami);
         assertThat(post("classes/" + todayClass + "/present", Map.of("member_id", id("youssef")), sami).status()).isEqualTo(200);
-        JsonNode participants = get("classes/" + todayClass + "/participants", sami).body();
+        JsonNode participants = get("classes/" + todayClass + "/participants?date=" + LocalDate.now(), sami).body();
         assertThat(participants.get(0).get("present").asBoolean()).isTrue();
     }
 

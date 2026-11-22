@@ -22,5 +22,6 @@ public interface ClassService {
 
     List<ParticipantDto> participants(CurrentUser me, Long classId, java.time.LocalDate date);
 
+    void setAttendance(CurrentUser me, Long classId, Long memberId, java.time.LocalDate date, String status);
     void markPresent(CurrentUser me, Long classId, Long memberId, java.time.LocalDate date);
 }

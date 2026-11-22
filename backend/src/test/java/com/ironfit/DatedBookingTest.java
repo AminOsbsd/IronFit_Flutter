@@ -41,4 +41,28 @@ class DatedBookingTest extends ApiTestSupport {
   assertThat(result.status()).isEqualTo(201);
   assertThat(post("plans",Map.of("name","Invalid pass","price",30,"duration_unit","MONTH","duration_count",1,"access_type","DAY_PASS"),admin).status()).isEqualTo(400);
  }
+ @org.springframework.beans.factory.annotation.Autowired com.ironfit.repository.CheckinRepository checkins;
+ @Test void attendanceCanBeReviewedAfterClassAndCorrectedWithoutDuplicates()throws Exception {
+  var coach=login("sami");var member=login("youssef");var other=login("leila");
+  var day=LocalDate.now(ZoneId.of("Africa/Tunis")).minusDays(1);
+  long classId=post("classes",Map.of("day",day.getDayOfWeek().getValue()-1,"time","18:00","title","Attendance review"),coach).body().get("id").asLong();
+  var booking=new com.ironfit.entity.DatedBooking(users.findById(id("youssef")).orElseThrow(),classRows.findById(classId).orElseThrow());booking.setSessionDate(day);dated.save(booking);
+  var url="classes/"+classId+"/present";
+  var present=Map.of("member_id",id("youssef"),"session_date",day.toString(),"attendance_status","present");
+  assertThat(post(url,present,member).status()).isEqualTo(403);
+  assertThat(post(url,present,other).status()).isEqualTo(403);
+  long before=checkins.count();
+  assertThat(post(url,present,coach).status()).isEqualTo(200);
+  assertThat(post(url,present,coach).status()).isEqualTo(200);
+  assertThat(checkins.count()).isEqualTo(before+1);
+  var rows=get("classes?week="+day,member).body();
+  var row=java.util.stream.StreamSupport.stream(rows.spliterator(),false).filter(x->x.path("id").asLong()==classId).findFirst().orElseThrow();
+  assertThat(row.path("attendance_status").asText()).isEqualTo("present");
+  assertThat(post(url,Map.of("member_id",id("youssef"),"session_date",day.toString(),"attendance_status","absent"),coach).status()).isEqualTo(200);
+  assertThat(checkins.count()).isEqualTo(before);
+  assertThat(get("classes/"+classId+"/participants?date="+day,coach).body().get(0).path("attendance_status").asText()).isEqualTo("absent");
+  assertThat(post(url,present,coach).status()).isEqualTo(200);
+  assertThat(checkins.count()).isEqualTo(before+1);
+  assertThat(post(url,Map.of("member_id",id("youssef"),"session_date",day.toString(),"attendance_status","invalid"),coach).status()).isEqualTo(400);
+ }
 }

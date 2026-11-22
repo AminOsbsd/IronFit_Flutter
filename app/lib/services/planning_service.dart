@@ -26,9 +26,14 @@ class PlanningService {
         'classes/$classId/participants${date == null ? '' : '?date=$date'}',
       );
 
-  static Future<void> markPresent(int classId, int memberId, {String? date}) =>
-      Api.post('classes/$classId/present', {
-        'member_id': memberId,
-        if (date != null) 'session_date': date,
-      });
+  static Future<void> markPresent(
+    int classId,
+    int memberId, {
+    String? date,
+    String status = 'present',
+  }) => Api.post('classes/$classId/present', {
+    'member_id': memberId,
+    'attendance_status': status,
+    if (date != null) 'session_date': date,
+  });
 }

@@ -46,7 +46,7 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | Notifications (abonnement, coaching, programme, commentaire, annonce, cours annulé) | Notifications (nouvelle demande, séance terminée…) | Notifications |
 | **AI Coach** : conseils personnalisés à partir de ses programmes, séances, mesures et réservations | **AI Coach** : aide à la programmation et au suivi des clients (chiffres agrégés) | **AI Coach** : aide à la gestion de la salle (chiffres agrégés) |
 
-**AI Coach** : bouton flottant « AI Coach » en bas à droite de tous les onglets principaux, qui ouvre un chat (panneau latéral sur grand écran, feuille plein écran sur téléphone). Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
+**AI Coach** : pour les membres, accès depuis **Accueil → Menu → AI Coach** sur téléphone et depuis le rail latéral sur ordinateur. Le chat s’ouvre dans un panneau latéral sans bouton flottant sur le contenu. Les coachs et administrateurs conservent leur accès existant. Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
 
 **Parcours récents** : écran Abonnement unifié, conservation de l'état des onglets, réservations par date et par semaine, durées d'adhésion structurées, entraînements guidés avec séries / répétitions / charges et minuteur de repos, suivi du volume enregistré. Voir [les règles des réservations et adhésions](backend/DATED_MEMBERSHIPS.txt).
 
@@ -276,7 +276,7 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 
 1. Créer une clé sur [openrouter.ai/keys](https://openrouter.ai/keys) (et ajouter un peu de crédit).
 2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)). **Gratuit** (testé en novembre 2026) : `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free` avec `OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free` — premier mot en ~0,4 s ; limite de 50 requêtes/jour sur un compte sans crédit, modèles parfois saturés (d'où les secours).
-3. Redémarrer le backend, ouvrir l'application, cliquer sur **AI Coach** (en bas à droite).
+3. Redémarrer le backend, ouvrir l'application, ouvrir **AI Coach** (membre : menu de l’accueil ou rail latéral ; coach/admin : bouton flottant).
 
 Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
 
@@ -637,3 +637,15 @@ Intégration des améliorations IronFit avec AI Coach, la rétention et les e-ma
 - Flutter : 51 tests unitaires/widgets réussis, y compris AI Coach et retour Stripe. Les tests contre un serveur réel sont exclus de cette vérification.
 - Analyse Flutter : code 1, 77 diagnostics informatifs, sans avertissement ni erreur.
 - Aucun appel réel à OpenRouter ou Stripe effectué pendant cette intégration. Les validations Sandbox du 16 novembre concernent la version précédente.
+
+## Visuels membre et vérification des présences
+
+Les écrans membre Accueil, Mon espace et Planning utilisent une illustration 3D originale noir/ambre (`app/assets/images/member_fitness_3d.png`). Les cartes réutilisent les composants IronFit, s’adaptent à la largeur et respectent la préférence de réduction des animations. Les espaces coach/admin conservent leur présentation ; seuls les contrôles de présence sont étendus.
+
+Une réservation datée possède désormais un statut `pending`, `present` ou `absent`. Le coach responsable du cours (ou un administrateur) ouvre Planning, choisit la semaine et le jour, puis Participants. Le menu de chaque membre permet de confirmer, marquer absent ou remettre à vérifier. Une séance passée reste vérifiable ; une séance non commencée est refusée côté serveur. Le planning membre affiche le statut, avec actualisation manuelle et à la reprise de l’application. Une notification accompagne chaque changement réel.
+
+L’API existante `POST /api/classes/{id}/present` accepte `member_id`, `session_date` et `attendance_status`. Les anciennes requêtes sans statut restent des confirmations de présence. Les réponses classes/participants exposent `attendance_status`. Le modèle `dated_bookings` ajoute deux colonnes nullables : `attendance_status` et `attendance_checkin_id`. En développement, `ddl-auto=update` les crée au redémarrage ; prévoir une migration additive et une sauvegarde pour un autre environnement. Les anciennes présences restent présentes, les anciennes valeurs false restent à vérifier. Les corrections suppriment uniquement le check-in lié créé par ce nouveau flux, jamais une visite manuelle ou historique indépendante.
+
+Le cours ne stocke pas d’heure de fin : la vérification est disponible à partir de son heure de début, et peut être faite après le cours. Les réservations commencées/vérifiées ne peuvent plus être annulées par le membre.
+
+Validation : 106 tests backend sur H2 et 53 tests Flutter unitaires/widgets réussis. Les tests Flutter contre un serveur réel sont exclus ; aucun appel réel Stripe/OpenRouter ni modification de la base utilisateur n’est nécessaire pour ces tests.

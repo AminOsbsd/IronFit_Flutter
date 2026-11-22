@@ -52,7 +52,7 @@ public class ClassController {
 
     @PostMapping("/classes/{id}/present")
     public OkResponse present(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id, @RequestBody PresentRequest body) {
-        classes.markPresent(me, id, body.memberId(), body.sessionDate());
+        classes.setAttendance(me, id, body.memberId(), body.sessionDate(), body.attendanceStatus() == null ? "present" : body.attendanceStatus());
         return OkResponse.OK;
     }
 }

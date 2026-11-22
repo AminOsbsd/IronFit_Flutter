@@ -26,6 +26,9 @@ public class DatedBooking {
     @Column(name="session_date", nullable=false)
     private java.time.LocalDate sessionDate;
     private boolean present = false;
+    private String attendanceStatus;
+    private Long attendanceCheckinId;
+    public String getAttendanceStatus() { return attendanceStatus == null ? (present ? "present" : "pending") : attendanceStatus; }
     @Column(unique=true) private Long legacyBookingId;
 
     public DatedBooking(User user, ClassSession classSession) { this.user = user; this.classSession = classSession; }

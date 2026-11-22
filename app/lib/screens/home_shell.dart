@@ -23,7 +23,7 @@ import 'risk_screen.dart';
 ///  - Coach « Espace coach »      : Accueil · Planning · Clients · Gestion · Profil
 ///  - Admin (administration)      : Accueil · Planning · Administration · Profil
 /// Écran étroit : barre de navigation en bas. Écran large (≥ 900 px) : rail latéral avec le logo.
-/// Le bouton « AI Coach » reste en bas à droite sur tous les onglets.
+/// Les membres accèdent à AI Coach depuis le menu latéral.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
   @override
@@ -145,7 +145,9 @@ class _HomeShellState extends State<HomeShell> {
         if (width >= 900) {
           final extended = width >= 1200;
           return Scaffold(
-            floatingActionButton: const AiCoachButton(extended: true),
+            floatingActionButton: Api.isCoach || Api.isAdmin
+                ? const AiCoachButton(extended: true)
+                : null,
             body: Row(
               children: [
                 NavigationRail(
@@ -174,6 +176,14 @@ class _HomeShellState extends State<HomeShell> {
                       ],
                     ),
                   ),
+                  trailing: !Api.isCoach && !Api.isAdmin
+                      ? IconButton(
+                          tooltip: 'AI Coach',
+                          icon: const Icon(Icons.smart_toy_outlined),
+                          onPressed: () =>
+                              openAiCoach(context, sidePanel: true),
+                        )
+                      : null,
                   destinations: [
                     for (final d in dests)
                       NavigationRailDestination(
@@ -195,7 +205,48 @@ class _HomeShellState extends State<HomeShell> {
 
         return Scaffold(
           body: body,
-          floatingActionButton: const AiCoachButton(),
+          floatingActionButton: Api.isCoach || Api.isAdmin
+              ? const AiCoachButton()
+              : null,
+          drawer: !Api.isCoach && !Api.isAdmin
+              ? Drawer(
+                  child: SafeArea(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: BrandLogo(size: 100),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
+                          child: Text(
+                            'Votre espace IronFit',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.smart_toy_outlined),
+                          title: const Text('AI Coach'),
+                          subtitle: const Text('Conseils et accompagnement'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            openAiCoach(context, sidePanel: true);
+                          },
+                        ),
+                        const Spacer(),
+                        const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('Un peu plus fort, chaque jour.'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : null,
           bottomNavigationBar: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -369,8 +420,9 @@ class ModulesGrid extends StatelessWidget {
                   ),
                   Text(
                     subtitle,
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: cs.onSurfaceVariant),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

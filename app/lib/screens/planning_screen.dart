@@ -17,7 +17,8 @@ class PlanningPage extends StatefulWidget {
   State<PlanningPage> createState() => _PlanningPageState();
 }
 
-class _PlanningPageState extends State<PlanningPage> {
+class _PlanningPageState extends State<PlanningPage>
+    with WidgetsBindingObserver {
   int day = DateTime.now().weekday - 1;
   DateTime week = DateTime.now().subtract(
     Duration(days: DateTime.now().weekday - 1),
@@ -29,6 +30,7 @@ class _PlanningPageState extends State<PlanningPage> {
   final searchController = TextEditingController();
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     searchController.dispose();
     super.dispose();
   }
@@ -45,7 +47,13 @@ class _PlanningPageState extends State<PlanningPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     load();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) load();
   }
 
   Future<void> load() async {
@@ -142,6 +150,27 @@ class _PlanningPageState extends State<PlanningPage> {
         color: AppColors.info,
         icon: Icons.sports_rounded,
       );
+    final date = DateTime.tryParse('${c['session_date']} ${c['time']}:00');
+    if (mine) {
+      final status = c['attendance_status'] ?? 'pending';
+      if (status != 'pending' ||
+          (date != null && date.isBefore(DateTime.now()))) {
+        return StatusPill(
+          status == 'present'
+              ? 'Présence confirmée'
+              : status == 'absent'
+              ? 'Absent'
+              : 'À vérifier',
+          color: status == 'present'
+              ? AppColors.success
+              : status == 'absent'
+              ? AppColors.danger
+              : AppColors.warning,
+        );
+      }
+    }
+    if (!mine && date != null && date.isBefore(DateTime.now()))
+      return const Text('Terminée');
     if (mine)
       return OutlinedButton(
         onPressed: () => book(c),
@@ -338,6 +367,47 @@ class _PlanningPageState extends State<PlanningPage> {
         onRetry: load,
         builder: () => Column(
           children: [
+            if (!manage && !Api.isCoach && !Api.isAdmin)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Trouvez votre rythme',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Réservez, participez, progressez.',
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ExcludeSemantics(
+                      child: Image.asset(
+                        'assets/images/member_fitness_3d.png',
+                        width: 82,
+                        height: 72,
+                        cacheWidth: 180,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: TextFormField(
@@ -461,9 +531,12 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
   List<Json> list = [];
   bool loading = true;
   String? error;
-  bool get isToday => widget.cls['session_date'] != null
-      ? widget.cls['session_date'] == todayIso()
-      : widget.cls['day'] == DateTime.now().weekday - 1;
+  final Set<int> saving = {};
+  bool get isToday =>
+      widget.cls['session_date'] != null &&
+      !DateTime.parse(
+        '${widget.cls['session_date']} ${widget.cls['time']}:00',
+      ).isAfter(DateTime.now());
 
   @override
   void initState() {
@@ -484,16 +557,25 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
     if (mounted) setState(() => loading = false);
   }
 
-  Future<void> mark(Json p) async {
-    if (await attempt(
-      context,
-      () => PlanningService.markPresent(
-        widget.cls['id'] as int,
-        p['id'] as int,
-        date: widget.cls['session_date'] as String?,
-      ),
-    ))
-      await load();
+  Future<void> mark(Json p, String status) async {
+    final id = p['id'] as int;
+    if (saving.contains(id)) return;
+    setState(() => saving.add(id));
+    try {
+      if (await attempt(
+        context,
+        () => PlanningService.markPresent(
+          widget.cls['id'] as int,
+          id,
+          date: widget.cls['session_date'] as String?,
+          status: status,
+        ),
+      )) {
+        await load();
+      }
+    } finally {
+      if (mounted) setState(() => saving.remove(id));
+    }
   }
 
   @override
@@ -531,8 +613,8 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
                   Expanded(
                     child: Text(
                       isToday
-                          ? '$present / ${list.length} présents aujourd\'hui'
-                          : 'Le pointage est possible uniquement le jour du cours (${dayLabel(widget.cls['day'] as int)}).',
+                          ? '$present / ${list.length} présences confirmées'
+                          : 'La présence pourra être vérifiée lorsque le cours aura commencé.',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         color: isToday
@@ -555,16 +637,44 @@ class _ParticipantsPageState extends State<ParticipantsPage> {
                 child: ListTile(
                   leading: InitialAvatar('${p['name']}'),
                   title: Text('${p['name']}'),
-                  subtitle: Text('${p['phone'] ?? 'Pas de téléphone'}'),
-                  trailing: isTrue(p['present'])
-                      ? const StatusPill(
-                          'Présent',
-                          color: AppColors.success,
-                          icon: Icons.check_rounded,
+                  subtitle: Text(
+                    '${widget.cls['session_date']} · ${p['phone'] ?? 'Pas de téléphone'}',
+                  ),
+                  trailing: saving.contains(p['id'])
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : FilledButton(
-                          onPressed: isToday ? () => mark(p) : null,
-                          child: const Text('Pointer'),
+                      : PopupMenuButton<String>(
+                          enabled: isToday,
+                          tooltip: 'Modifier la présence',
+                          onSelected: (status) => mark(p, status),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'present',
+                              child: Text('Présent'),
+                            ),
+                            PopupMenuItem(
+                              value: 'absent',
+                              child: Text('Absent'),
+                            ),
+                            PopupMenuItem(
+                              value: 'pending',
+                              child: Text('À vérifier'),
+                            ),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              p['attendance_status'] == 'present' ||
+                                      isTrue(p['present'])
+                                  ? 'Présent ▾'
+                                  : p['attendance_status'] == 'absent'
+                                  ? 'Absent ▾'
+                                  : 'À vérifier ▾',
+                            ),
+                          ),
                         ),
                 ),
               ),

@@ -70,7 +70,7 @@ public class ClassServiceImpl implements ClassService {
         LocalDate monday=week==null ? null : week.minusDays(week.getDayOfWeek().getValue()-1);
         return classes.findAllWithCoach().stream().map(c -> {
             LocalDate d=date(c,monday==null?null:monday.plusDays(c.getDay()));
-            return new ClassDto(c.getId(),c.getDay(),c.getTime(),c.getTitle(),c.coachId(),c.getSpots(),c.getCoach()==null?null:c.getCoach().getName(),c.getCoach()==null?null:c.getCoach().getSpecialty(),bookings.countByClassSessionIdAndSessionDate(c.getId(),d),bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(),c.getId(),d).isPresent(),d);
+            return new ClassDto(c.getId(),c.getDay(),c.getTime(),c.getTitle(),c.coachId(),c.getSpots(),c.getCoach()==null?null:c.getCoach().getName(),c.getCoach()==null?null:c.getCoach().getSpecialty(),bookings.countByClassSessionIdAndSessionDate(c.getId(),d),bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(),c.getId(),d).isPresent(),d,bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(),c.getId(),d).map(DatedBooking::getAttendanceStatus).orElse(null));
         }).toList();
     }
 
@@ -137,6 +137,7 @@ public class ClassServiceImpl implements ClassService {
         var existing = bookings.findByUserIdAndClassSessionIdAndSessionDate(me.id(), c.getId(),d);
         if(desired!=null && desired==existing.isPresent()) return new BookResponse(true,desired);
         if (existing.isPresent()) {
+            if (!"pending".equals(existing.get().getAttendanceStatus()) || (d.equals(today()) && !java.time.LocalTime.parse(c.getTime()).isAfter(java.time.LocalTime.now(java.time.ZoneId.of("Africa/Tunis"))))) throw ApiException.conflict("Une séance commencée ou vérifiée ne peut plus être annulée");
             bookings.delete(existing.get());
             return new BookResponse(true, false);
         }
@@ -158,23 +159,33 @@ public class ClassServiceImpl implements ClassService {
         ClassSession c = cls(classId);
         manage(me, c);
         LocalDate d=date(c,requested);
-        return bookings.findByClassSessionIdAndSessionDate(c.getId(),d).stream().map(b -> new ParticipantDto(b.getUser().getId(),b.getUser().getName(),b.getUser().getPhone(),b.isPresent())).toList();
+        return bookings.findByClassSessionIdAndSessionDate(c.getId(),d).stream().map(b -> new ParticipantDto(b.getUser().getId(),b.getUser().getName(),b.getUser().getPhone(),b.isPresent(),b.getAttendanceStatus())).toList();
     }
 
     @Override
     public void markPresent(CurrentUser me, Long classId, Long memberId, LocalDate requested) {
-        ClassSession c = cls(classId);
-        manage(me, c);
-        LocalDate today=date(c,requested);
-        var booking=bookings.findByUserIdAndClassSessionIdAndSessionDate(memberId,c.getId(),today).orElseThrow(()->ApiException.notFound("Réservation introuvable"));
-        if(!today.equals(today())) throw ApiException.badRequest("Le pointage se fait le jour de la séance");
-        booking.setPresent(true);
-        if (!checkins.existsByMemberIdAndCheckinOnAndNote(memberId, today, c.getTitle())) {
-            Checkin k = new Checkin();
-            k.setMember(users.getReferenceById(memberId));
-            k.setCheckinOn(today);
-            k.setNote(c.getTitle());
-            checkins.save(k);
+        setAttendance(me,classId,memberId,requested,"present");
+    }
+
+    @Override
+    public void setAttendance(CurrentUser me, Long classId, Long memberId, LocalDate requested, String status) {
+        if (!Set.of("present","absent","pending").contains(status == null ? "" : status)) throw ApiException.badRequest("Statut de présence invalide");
+        ClassSession c=cls(classId);manage(me,c);
+        em.lock(c,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        LocalDate d=requested==null && c.getDay()==today().getDayOfWeek().getValue()-1 ? today() : date(c,requested);
+        var booking=bookings.findByUserIdAndClassSessionIdAndSessionDate(memberId,c.getId(),d).orElseThrow(()->ApiException.notFound("Réservation introuvable"));
+        if(d.isAfter(today()) || (d.equals(today()) && java.time.LocalTime.now(java.time.ZoneId.of("Africa/Tunis")).isBefore(java.time.LocalTime.parse(c.getTime())))) throw ApiException.badRequest("La séance n’a pas encore commencé");
+        if(status.equals(booking.getAttendanceStatus())) return;
+        if("present".equals(status)) {
+            if(booking.getAttendanceCheckinId()==null && !checkins.existsByMemberIdAndCheckinOnAndNote(memberId,d,c.getTitle())) {
+                Checkin k=new Checkin();k.setMember(booking.getUser());k.setCheckinOn(d);k.setNote(c.getTitle());
+                booking.setAttendanceCheckinId(checkins.save(k).getId());
+            }
+        } else if(booking.getAttendanceCheckinId()!=null) {
+            checkins.findById(booking.getAttendanceCheckinId()).ifPresent(checkins::delete);
+            booking.setAttendanceCheckinId(null);
         }
+        booking.setPresent("present".equals(status));booking.setAttendanceStatus(status);
+        notifications.notify(memberId,"Présence mise à jour",c.getTitle()+" · "+d+" : "+switch(status){case "present" -> "présence confirmée";case "absent" -> "absent";default -> "à vérifier";});
     }
 }

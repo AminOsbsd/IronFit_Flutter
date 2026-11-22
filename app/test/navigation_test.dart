@@ -22,7 +22,7 @@ void main() {
     expect(tabs(tester), ['Accueil', 'Planning', 'Explorer', 'Mon espace', 'Profil']);
     expect(find.text('Espace coach'), findsNothing);
     expect(find.text('Bonjour, Youssef 👋'), findsOneWidget);
-    expect(find.text('CARTE MEMBRE'), findsOneWidget);
+    expect(find.text('Carte membre'), findsOneWidget);
     expect(find.byType(Badge), findsOneWidget); // cloche des notifications (2 non lues)
     expect(find.byType(BrandBackdrop), findsWidgets); // filigrane du logo derrière la page
   });

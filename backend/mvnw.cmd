@@ -1,3 +1,4 @@
+@echo off
 @REM ----------------------------------------------------------------------------
 @REM Licensed to the Apache Software Foundation (ASF) under one
 @REM or more contributor license agreements.  See the NOTICE file
@@ -46,19 +47,26 @@
 
 set ERROR_CODE=0
 
-@REM set local scope for the variables with windows NT shell
-set "JAVA_EXE=%JAVA_HOME%/bin/java.exe"
-set "DEFAULT_JVM_OPTS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
-
-if not exist "%JAVA_EXE%" (
-  if not exist "%JAVA_HOME%\bin\java.exe" (
-    echo.
-    echo Error: JAVA_HOME is not defined correctly.
-    echo   We cannot execute %JAVA_EXE%
-    echo.
-    goto error
-  )
+@REM Prefer an explicit JDK; otherwise use Java already available on PATH.
+set "JAVA_EXE="
+if defined JAVA_HOME (
   set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
+) else (
+  for %%i in (java.exe) do set "JAVA_EXE=%%~$PATH:i"
+)
+set "DEFAULT_JVM_OPTS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
+if not defined JAVA_EXE (
+  echo Error: Java was not found. Install JDK 17 and set JAVA_HOME or add Java to PATH.
+  goto error
+)
+if not exist "%JAVA_EXE%" (
+  echo Error: JAVA_HOME does not point to a valid JDK directory.
+  goto error
+)
+
+@REM Resolve the actual JDK behind PATH shims for Maven's child launcher.
+if not defined JAVA_HOME (
+  for /f "usebackq delims=" %%j in (`powershell -NoProfile -Command "$lines = & $env:JAVA_EXE -XshowSettings:properties -version 2>&1; foreach ($line in $lines) { if ($line.ToString() -match '^\s*java.home\s*=\s*(.+)$') { $Matches[1].Trim(); break } }"`) do set "JAVA_HOME=%%j"
 )
 
 @REM Find the project base dir, i.e. the directory that contains the folder ".mvn".
@@ -87,17 +95,13 @@ cd "%EXEC_DIR%"
 
 :endDetectBaseDir
 
-IF NOT EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" (
-  SET MVNW_REPOURL=https://repo.maven.apache.org/maven2
-  IF NOT "%MVNW_REPOURL%"=="" goto downloadFromRepoUrl
-  goto wrapperDownloadError
-)
+IF NOT EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" goto downloadFromRepoUrl
 goto executeWrapper
 
 :downloadFromRepoUrl
+IF NOT DEFINED MVNW_REPOURL SET "MVNW_REPOURL=https://repo.maven.apache.org/maven2"
 SET MVNW_DOWNLOAD_URL=%MVNW_REPOURL%/org/apache/maven/wrapper/maven-wrapper/3.3.2/maven-wrapper-3.3.2.jar
 IF NOT EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper" mkdir "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper"
-%JAVA_EXE% -classpath "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" org.apache.maven.wrapper.MavenWrapperMain %MAVEN_CMD_LINE_ARGS% 2>nul
 IF NOT EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" (
   powershell -Command "&{"^
     "$webclient = new-object System.Net.WebClient;"^
@@ -111,7 +115,7 @@ IF NOT EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" (
 
 :executeWrapper
 @IF EXIST "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" (
-  %JAVA_EXE% %MAVEN_OPTS% %DEFAULT_JVM_OPTS% ^
+  "%JAVA_EXE%" %MAVEN_OPTS% %DEFAULT_JVM_OPTS% ^
     -classpath "%MAVEN_PROJECTBASEDIR%\.mvn\wrapper\maven-wrapper.jar" ^
     "-Dmaven.multiModuleProjectDirectory=%MAVEN_PROJECTBASEDIR%" ^
     org.apache.maven.wrapper.MavenWrapperMain %MAVEN_CMD_LINE_ARGS%

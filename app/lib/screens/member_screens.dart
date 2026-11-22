@@ -1,3 +1,4 @@
+import '../widgets/member_fitness_hero.dart';
 import 'membership_screen.dart';
 import 'stripe_payments_screen.dart';
 import 'gym_location_screen.dart';
@@ -107,6 +108,46 @@ class _MemberHomeState extends State<MemberHome> {
         : (active
               ? 'Actif · $left jour${left > 1 ? "s" : ""} restant${left > 1 ? "s" : ""}'
               : 'Expiré le $end');
+    if (!Api.isCoach && !Api.isAdmin) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              const IconBadge(Icons.credit_card_rounded),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      me.planName ?? 'Carte membre',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'N° ${'${me.id}'.padLeft(4, '0')} · ${me.name}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    StatusPill(
+                      status,
+                      color: active
+                          ? AppColors.success
+                          : Theme.of(context).colorScheme.error,
+                      icon: active
+                          ? Icons.verified_rounded
+                          : Icons.error_outline,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return HeroCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,6 +228,16 @@ class _MemberHomeState extends State<MemberHome> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
+        leading:
+            !Api.isCoach &&
+                !Api.isAdmin &&
+                MediaQuery.sizeOf(context).width < 900
+            ? IconButton(
+                tooltip: 'Menu',
+                icon: const Icon(Icons.menu_rounded),
+                onPressed: () => Scaffold.maybeOf(context)?.openDrawer(),
+              )
+            : null,
         title: Text('Bonjour, ${me.firstName} 👋'),
         actions: [
           NotificationBell(page: () => const NotificationsPage()),
@@ -243,14 +294,16 @@ class _MemberHomeState extends State<MemberHome> {
                   },
                 ),
               ),
-              HeroCard(
+              MemberFitnessHero(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'VOTRE PROCHAIN OBJECTIF',
                       style: TextStyle(
-                        color: AppColors.amber,
+                        color: Api.isCoach || Api.isAdmin
+                            ? AppColors.amber
+                            : AppColors.amberText,
                         letterSpacing: 1.2,
                         fontSize: 12,
                       ),
@@ -260,14 +313,22 @@ class _MemberHomeState extends State<MemberHome> {
                       activePrograms.isNotEmpty
                           ? '${activePrograms.first['title']}'
                           : 'Votre prochaine séance commence ici',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.headlineSmall?.copyWith(color: Colors.white),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Api.isCoach || Api.isAdmin
+                                ? Colors.white
+                                : cs.onSurface,
+                            fontWeight: FontWeight.w800,
+                          ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Retrouvez votre programme ou réservez un cours à la salle.',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Api.isCoach || Api.isAdmin
+                            ? Colors.white70
+                            : cs.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
@@ -886,6 +947,32 @@ class MySpacePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
+          if (!Api.isCoach && !Api.isAdmin) ...[
+            MemberFitnessHero(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chaque séance compte.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Vos programmes, vos efforts, votre progression.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
           const SectionHeader('Entraînement'),
           item(
             Icons.list_alt_rounded,
