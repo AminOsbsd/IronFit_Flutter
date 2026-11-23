@@ -1,18 +1,30 @@
-# Données locales (ancienne base SQLite, clé JWT générée) et configuration : jamais versionnées
-backend/data/
+# ── Secrets & local config ──────────────────────────────────────────
 backend/.env
 .env
-
-# Maven / Spring Boot
-backend/target/
-*.log
-
-# Export SQL de migration (contient des données personnelles)
-ironfit-import.sql
-
-# Node (outil de migration uniquement)
 node_modules/
+backend/data/
+*.sql
 
-# Divers
+# ── Maven build output ───────────────────────────────────────────────
+backend/target/
+
+# ── Flutter build output ─────────────────────────────────────────────
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/pubspec.lock
+
+# ── IDEs ─────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.suo
+*.user
+
+# ── OS ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Local verification output
+*.log

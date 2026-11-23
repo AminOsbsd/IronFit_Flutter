@@ -22,7 +22,7 @@ public class StatsServiceImpl implements StatsService {
     private final SubscriptionRequestRepository requests;
     private final CoachClientRepository links;
     private final WorkoutRepository workouts;
-    private final BookingRepository bookings;
+    private final DatedBookingRepository bookings;
     private final ProductRepository products;
     private final EquipmentRepository equipment;
     private final CheckinRepository checkins;
@@ -32,7 +32,7 @@ public class StatsServiceImpl implements StatsService {
     private final AccessService access;
 
     public StatsServiceImpl(UserRepository users, SubscriptionRequestRepository requests, CoachClientRepository links, WorkoutRepository workouts,
-                            BookingRepository bookings, ProductRepository products, EquipmentRepository equipment, CheckinRepository checkins,
+                            DatedBookingRepository bookings, ProductRepository products, EquipmentRepository equipment, CheckinRepository checkins,
                             PaymentRepository payments, ClassSessionRepository classes, ProgramRepository programs, AccessService access) {
         this.users = users;
         this.requests = requests;
@@ -65,7 +65,11 @@ public class StatsServiceImpl implements StatsService {
 
     private List<Map<String, Object>> fill(List<ClassSession> list) {
         Map<Long, Long> taken = new HashMap<>();
-        for (Object[] row : bookings.countPerClass()) taken.put((Long) row[0], (Long) row[1]);
+        for (ClassSession c : list) {
+            var today=LocalDate.now(java.time.ZoneId.of("Africa/Tunis"));
+            var date=today.plusDays((c.getDay()-today.getDayOfWeek().getValue()+8)%7);
+            taken.put(c.getId(),bookings.countByClassSessionIdAndSessionDate(c.getId(),date));
+        }
         List<Map<String, Object>> out = new ArrayList<>();
         for (ClassSession c : list) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -113,11 +117,11 @@ public class StatsServiceImpl implements StatsService {
 
     /** Revenus des 6 derniers mois (mois ayant au moins un paiement), du plus ancien au plus récent. */
     private List<Map<String, Object>> revenue(LocalDate today) {
-        TreeMap<YearMonth, BigDecimal> byMonth = new TreeMap<>();
+        TreeMap<String, BigDecimal> byMonth = new TreeMap<>();
         for (Payment p : payments.findByPaidOnGreaterThanEqual(YearMonth.from(today).minusMonths(5).atDay(1))) {
-            byMonth.merge(YearMonth.from(p.getPaidOn()), p.getAmount(), BigDecimal::add);
+            byMonth.merge(YearMonth.from(p.getPaidOn()) + ":" + p.getCurrency(), p.getAmount(), BigDecimal::add);
         }
-        return byMonth.entrySet().stream().map(e -> Map.<String, Object>of("m", e.getKey().toString(), "total", e.getValue())).toList();
+        return byMonth.entrySet().stream().map(e -> Map.<String, Object>of("m", e.getKey().substring(0,7), "currency", e.getKey().substring(8), "total", e.getValue())).toList();
     }
 
     private Map<String, Object> coach(CurrentUser me) {

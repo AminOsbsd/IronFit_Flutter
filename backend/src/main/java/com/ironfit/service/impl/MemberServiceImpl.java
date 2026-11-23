@@ -43,7 +43,7 @@ public class MemberServiceImpl implements MemberService {
         this.encoder = encoder;
     }
 
-    private static UserDto dto(User u) { return UserDto.of(u, u.getPlan() == null ? null : u.getPlan().getName()); }
+    private static UserDto dto(User u) { return UserDto.of(u); }
 
     @Override
     @Transactional(readOnly = true)

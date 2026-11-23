@@ -19,28 +19,46 @@ class AiCoachButton extends StatelessWidget {
     const icon = Icon(Icons.smart_toy_rounded);
     void open() => openAiCoach(context);
     return extended
-        ? FloatingActionButton.extended(heroTag: 'ai-coach', tooltip: 'AI Coach', onPressed: open, icon: icon, label: const Text('AI Coach'))
-        : FloatingActionButton(heroTag: 'ai-coach', tooltip: 'AI Coach', onPressed: open, child: icon);
+        ? FloatingActionButton.extended(
+            heroTag: 'ai-coach',
+            tooltip: 'AI Coach',
+            onPressed: open,
+            icon: icon,
+            label: const Text('AI Coach'),
+          )
+        : FloatingActionButton(
+            heroTag: 'ai-coach',
+            tooltip: 'AI Coach',
+            onPressed: open,
+            child: icon,
+          );
   }
 }
 
-/// Ouvre le chat : panneau latéral sur grand écran, feuille presque plein écran sur téléphone.
-Future<void> openAiCoach(BuildContext context) {
+/// Members use a side panel; other roles retain their existing chat layout.
+Future<void> openAiCoach(BuildContext context, {bool sidePanel = false}) {
   final size = MediaQuery.sizeOf(context);
-  if (size.width >= 700) {
+  if (sidePanel || size.width >= 700) {
     return showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Fermer AI Coach',
       barrierColor: Colors.black38,
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, _, _) => Align(
+      transitionDuration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, _, _) => Align(
         alignment: Alignment.centerRight,
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.fromLTRB(
+              12,
+              12,
+              12,
+              12 + MediaQuery.viewInsetsOf(dialogContext).bottom,
+            ),
             child: SizedBox(
-              width: 420,
+              width: size.width < 444 ? size.width - 24 : 420,
               child: Material(
                 elevation: 8,
                 borderRadius: BorderRadius.circular(22),
@@ -53,7 +71,10 @@ Future<void> openAiCoach(BuildContext context) {
         ),
       ),
       transitionBuilder: (_, a, _, child) => SlideTransition(
-        position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
+        position: Tween(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)),
         child: child,
       ),
     );
@@ -67,7 +88,10 @@ Future<void> openAiCoach(BuildContext context) {
       final inset = MediaQuery.viewInsetsOf(c).bottom;
       return Padding(
         padding: EdgeInsets.only(bottom: inset),
-        child: SizedBox(height: (MediaQuery.sizeOf(c).height - inset) * 0.92, child: const AiCoachPanel()),
+        child: SizedBox(
+          height: (MediaQuery.sizeOf(c).height - inset) * 0.92,
+          child: const AiCoachPanel(),
+        ),
       );
     },
   );

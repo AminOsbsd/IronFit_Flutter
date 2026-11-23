@@ -1,0 +1,30 @@
+IronFit Stripe verification — 16 November 2026
+
+Sandbox only; EUR. Mensuel and Trimestriel remain one-time purchases, explicitly confirmed by the user. No new charges were created during recovery.
+
+Repairs
+- STRIPE_RETURN_URL points to http://localhost:5173. New Checkout return URLs include payment_order and payment_return.
+- Flutter restores authentication, opens the order screen, skips the introduction on payment return, polls for backend confirmation, and reconciles completed pending sessions server-side. Reconciliation errors remain visible.
+- Reconciliation validates test mode, session ID, mode, customer, metadata, client reference, subtotal, total and currency before fulfillment. Active/trialing subscriptions alone no longer grant access; recurring fulfillment remains invoice-driven.
+- Unknown explicit orders produce a retryable webhook failure instead of HTTP 200. Missing invoice linkage with a subscription also requests retry; checkout supports stored session/client-reference fallback.
+- Missing webhook signatures return HTTP 400.
+- Corrected a mismatch between the configured webhook secret and the CLI secret for the configured Sandbox account. Only one new listener is used, forwarding to http://localhost:8080/api/payments/stripe/webhook. Its helper redacts signing secrets.
+- Data-changing Flutter integration tests require an explicit IRONFIT_API_URL, preventing accidental default access to the user's database.
+
+Verification
+- Maven clean test package: exit 0, 70 tests, zero failures/errors/skips.
+- Flutter test --concurrency=1 with IRONFIT_API_URL=http://localhost:8081/api: exit 0, 42 tests, zero failures/skips. A separate fresh MySQL database ironfit_verification_20261116 was used and retained; its server was stopped after testing.
+- Flutter analyze: exit 1, 74 informational diagnostics, zero errors/warnings. Categories: 31 deprecated material imports, 40 missing-braces lint findings, 3 null-aware-element suggestions. These are outstanding diagnostics, not a clean analysis result.
+- The initial non-clean Maven run failed from stale compiled classes. A later clean attempt failed because Windows locked the running JAR; stopping the exact process resolved it. An initial Flutter run encountered insufficient disk space and a non-fresh integration database. Final commands above supersede those failed attempts.
+- Final tested JAR restarted from backend/, which imports its local .env. .env is Git-ignored and untracked. Real signed webhook fulfillment and newly created Checkout sessions confirmed configuration use.
+- Running reconciliation endpoint returned HTTP 200/pending for an unpaid demo Checkout session. It was then expired through the cancel endpoint without a charge. Pending-to-paid reconciliation and repeat idempotency were exercised with mocked Stripe retrieval in backend tests, including six rejection cases.
+- Real Stripe Sandbox checkout.session.completed events were redelivered through Stripe CLI. The listener logged HTTP 200 and Spring Boot recorded fulfillment. This was provider redelivery, not fabricated webhook data.
+- Four historical EUR60/EUR160 orders were verified against Stripe and recovered. Each local Payment count changed from zero to one; duplicate deliveries kept it at one and did not extend membership twice. Latest EUR10 order also passed duplicate delivery checks. Two additional previously pending orders were also verified and recovered through their original Stripe events. No pending orders remained after recovery.
+- A before/after hash of all TND payment rows remained equal during the EUR60/EUR160 recovery.
+- The user confirmed that refreshing the actual Stripe return page shows Paiement confirme automatically without pressing Verifier le paiement. Automated widget tests cover automatic reconciliation and confirmation. Browser automation could not initialize in this environment, so this visual confirmation was user-observed. A fresh uninterrupted Checkout-to-confirmation browser run was not independently observed by the agent.
+
+Local operation
+- Run the backend JAR from backend/ to load .env.
+- Frontend is served at http://localhost:5173.
+- Sandbox listener helper: python -u scripts/stripe_test_listener.py (requires the installed Stripe CLI and backend/.env).
+- Keep the listener running during Sandbox payments. If its signing secret changes, update backend/.env and restart Spring Boot.

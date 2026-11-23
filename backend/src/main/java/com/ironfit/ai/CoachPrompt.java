@@ -52,9 +52,9 @@ public final class CoachPrompt {
 
             Where things are in the IronFit app (French labels):
             - "Mon espace" tab: "Mes programmes", "Mes séances" (workout log), "Ma progression" (weight / body fat), \
-            "Mes coachs", "Mes présences", "Mes paiements".
-            - "Planning" tab: weekly classes, book or cancel. "Explorer" tab: plans and prices, coaches, offers, shop, announcements.
-            - "Profil" tab: account settings. Coaches switch between "Mon entraînement" and "Espace coach".
+            "Mes coachs", "Mes présences", "Mon abonnement" (plan, renewal, payments and invoices).
+            - "Planning" tab: classes by date, book or cancel. "Explorer" tab: plans and prices, coaches, offers, shop, announcements.
+            - "Profil" tab: account settings, "Nous trouver" (map and directions to the gym). Coaches switch between "Mon entraînement" and "Espace coach".
             """;
 
     private static final String GYM_RULE = """
@@ -100,7 +100,7 @@ public final class CoachPrompt {
         sb.append(GYM_RULE).append('\n');
         sb.append("GYM KNOWLEDGE BASE (written by the gym staff):\n");
         sb.append(knowledge == null || knowledge.isBlank() ? "(empty)" : knowledge.trim()).append("\n\n");
-        sb.append("GYM DATA (live from the IronFit database, prices in DT = Tunisian dinar):\n");
+        sb.append("GYM DATA (live from the IronFit database, each plan price carries its own currency: quote it exactly, EUR = euro, TND = Tunisian dinar (DT), never convert):\n");
         if (gymFacts == null || gymFacts.isEmpty()) sb.append("- (none)\n");
         else for (String g : gymFacts) sb.append("- ").append(g).append('\n');
         sb.append('\n');
@@ -110,7 +110,9 @@ public final class CoachPrompt {
             case ADMIN -> ADMIN;
         });
         sb.append("\nUser's first name: ").append(firstName == null || firstName.isBlank() ? "unknown" : firstName.trim()).append('\n');
-        sb.append("Today's date: ").append(today).append('\n');
+        // Jour de la semaine fourni : les petits modèles le calculent mal
+        sb.append("Today's date: ").append(today.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH))
+                .append(' ').append(today).append('\n');
         sb.append("\nUSER DATA FROM IRONFIT (private to this user, may be partial):\n");
         if (facts == null || facts.isEmpty()) sb.append("- No data recorded yet.\n");
         else for (String f : facts) sb.append("- ").append(f).append('\n');

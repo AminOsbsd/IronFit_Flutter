@@ -25,6 +25,7 @@ public class User {
     private String email;
     @Column(length = 30)
     private String phone;
+    private String stripeCustomerId;
     @Column(nullable = false, length = 10)
     private Role role;
     /** Hachage bcrypt (ou scrypt hérité de l'ancienne base, converti en bcrypt à la connexion). */

@@ -167,7 +167,14 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('le bouton AI Coach est sur tous les onglets ; le chat répond en streaming et au clavier', (tester) async {
+    Future<void> openMemberChat(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'AI Coach'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('le menu latéral remplace le bouton flottant ; le chat répond et conserve son historique', (tester) async {
       await signedIn(athlete, {
         'GET ai-coach/status': {'enabled': true, 'model': 'test/model'},
         'POST ai-coach/chat': sse(['Bravo Youssef, ', 'continue comme ça !']),
@@ -177,10 +184,10 @@ void main() {
       for (final tab in ['Planning', 'Explorer', 'Mon espace', 'Profil', 'Accueil']) {
         await tester.tap(find.text(tab).last);
         await tester.pumpAndSettle();
-        expect(find.byTooltip('AI Coach'), findsOneWidget, reason: 'onglet $tab');
+        expect(find.byType(FloatingActionButton), findsNothing, reason: 'onglet $tab');
       }
 
-      await tester.tap(find.byTooltip('AI Coach'));
+      await openMemberChat(tester);
       await tester.pumpAndSettle();
       expect(find.byType(AiCoachPanel), findsOneWidget);
       expect(find.text('Bonjour Youssef !'), findsOneWidget); // état vide avec suggestions
@@ -198,7 +205,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.byType(AiCoachPanel), findsNothing);
-      await tester.tap(find.byTooltip('AI Coach'));
+      await openMemberChat(tester);
       await tester.pumpAndSettle();
       expect(find.text('Bravo Youssef, continue comme ça !'), findsOneWidget);
 
@@ -213,7 +220,7 @@ void main() {
     testWidgets('une erreur du serveur s\'affiche avec « Réessayer »', (tester) async {
       await signedIn(athlete, {'POST ai-coach/chat': jsonError(503, 'AI Coach n\'est pas configuré sur le serveur (clé OpenRouter manquante).')});
       await open(tester);
-      await tester.tap(find.byTooltip('AI Coach'));
+      await openMemberChat(tester);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Que faire à ma prochaine séance ?'));
       await tester.pumpAndSettle();
@@ -224,10 +231,35 @@ void main() {
     testWidgets('sans clé côté serveur : bandeau explicatif et saisie désactivée', (tester) async {
       await signedIn(athlete, {'GET ai-coach/status': {'enabled': false, 'model': 'x'}});
       await open(tester);
-      await tester.tap(find.byTooltip('AI Coach'));
+      await openMemberChat(tester);
       await tester.pumpAndSettle();
       expect(find.textContaining('OPENROUTER_API_KEY'), findsOneWidget);
       expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    });
+
+    testWidgets('member side panel fits a narrow phone and keyboard', (tester) async {
+      await signedIn(athlete, {'GET ai-coach/status': {'enabled': true}});
+      await open(tester, width: 320);
+      await openMemberChat(tester);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(tester.widget<AiCoachPanel>(find.byType(AiCoachPanel)).wide, isTrue);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      final input = tester.getRect(find.byType(TextField));
+      expect(input.bottom, lessThanOrEqualTo(600));
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('Fermer'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('member desktop opens AI from the navigation rail', (tester) async {
+      await signedIn(athlete, {'GET ai-coach/status': {'enabled': true}});
+      await open(tester, width: 1300);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      await tester.tap(find.byTooltip('AI Coach'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiCoachPanel), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('grand écran : bouton avec libellé et panneau latéral ; coach dans son espace', (tester) async {

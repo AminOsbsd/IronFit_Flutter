@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Ne fait rien si au moins un utilisateur existe (données importées ou déjà saisies).
  */
 @Component
+@org.springframework.core.annotation.Order(0)
 public class DataInitializer implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
@@ -67,7 +68,25 @@ public class DataInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (users.count() > 0) return;
+        // Backfill legacy records in their ORIGINAL currency, without changing amounts.
+        for (Payment old : payments.findAll()) {
+            if ("TND".equals(old.getCurrency())) {
+                old.setCurrency("TND");
+                if (old.getAmountMinor() == null) old.setAmountMinor(old.getAmount().movePointRight(3).longValueExact());
+            }
+        }
+        if (users.count() > 0) {
+            // Explicitly approved EUR catalogue; once only, never touch payment history.
+            var approved = java.util.Map.of("Séance", 10, "Mensuel", 60, "Trimestriel", 160, "Annuel", 550);
+            for (Plan p : plans.findAll()) {
+                com.ironfit.service.MembershipRules.infer(p);
+                if ("TND".equals(p.getCurrency()) && approved.containsKey(p.getName())) {
+                    p.setPrice(BigDecimal.valueOf(approved.get(p.getName())));
+                    p.setCurrency("EUR");
+                }
+            }
+            return;
+        }
         if (props.adminPassword() == null || props.adminPassword().isBlank()) {
             throw new IllegalStateException("Base vide : définissez ADMIN_PASSWORD pour créer le compte administrateur");
         }
@@ -93,7 +112,9 @@ public class DataInitializer implements ApplicationRunner {
         Plan p = new Plan();
         p.setName(name);
         p.setPrice(BigDecimal.valueOf(price));
+        p.setCurrency("EUR");
         p.setDuration(duration);
+        com.ironfit.service.MembershipRules.infer(p);
         p.setDescr(descr);
         return plans.save(p);
     }

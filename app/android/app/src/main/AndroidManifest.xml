@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- usesCleartextTraffic : le serveur local est en HTTP (http://IP-DU-PC:3000).
          En production, servir l'API en HTTPS et retirer cet attribut. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="IronFit"
         android:name="${applicationName}"

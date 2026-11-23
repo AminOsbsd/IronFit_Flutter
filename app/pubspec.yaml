@@ -12,6 +12,10 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
+  geolocator: ^14.0.2
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  url_launcher: ^6.3.2
   http: ^1.2.0
   shared_preferences: ^2.2.0
 
@@ -24,5 +28,7 @@ flutter:
   uses-material-design: true
   # Logo officiel IronFit (original + variante sans fond pour le filigrane)
   assets:
+    - assets/images/member_fitness_3d.png
+    - assets/images/member_strength_3d.png
     - assets/images/ironfit_logo.png
     - assets/images/ironfit_logo_transparent.png

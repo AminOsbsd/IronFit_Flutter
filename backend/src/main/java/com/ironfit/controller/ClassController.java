@@ -21,7 +21,7 @@ public class ClassController {
     public ClassController(ClassService classes) { this.classes = classes; }
 
     @GetMapping("/classes")
-    public List<ClassDto> list(@AuthenticationPrincipal CurrentUser me) { return classes.list(me); }
+    public List<ClassDto> list(@AuthenticationPrincipal CurrentUser me, @RequestParam(required=false) java.time.LocalDate week) { return classes.list(me,week); }
 
     @PostMapping("/classes")
     @PreAuthorize("hasAnyRole('ADMIN','COACH')")
@@ -45,14 +45,14 @@ public class ClassController {
     /** Réserve ou annule (bascule) ; abonnement actif requis pour réserver. */
     @PostMapping("/book")
     @PreAuthorize("hasRole('MEMBER')")
-    public BookResponse book(@AuthenticationPrincipal CurrentUser me, @RequestBody BookRequest body) { return classes.book(me, body.classId()); }
+    public BookResponse book(@AuthenticationPrincipal CurrentUser me, @RequestBody BookRequest body) { return classes.book(me, body.classId(), body.sessionDate(), body.booked()); }
 
     @GetMapping("/classes/{id}/participants")
-    public List<ParticipantDto> participants(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id) { return classes.participants(me, id); }
+    public List<ParticipantDto> participants(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id, @RequestParam(required=false) java.time.LocalDate date) { return classes.participants(me, id, date); }
 
     @PostMapping("/classes/{id}/present")
     public OkResponse present(@AuthenticationPrincipal CurrentUser me, @PathVariable Long id, @RequestBody PresentRequest body) {
-        classes.markPresent(me, id, body.memberId());
+        classes.setAttendance(me, id, body.memberId(), body.sessionDate(), body.attendanceStatus() == null ? "present" : body.attendanceStatus());
         return OkResponse.OK;
     }
 }

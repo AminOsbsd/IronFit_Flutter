@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
+    boolean existsByStripeReference(String reference);
+    List<Payment> findByMemberIdOrderByIdDesc(Long memberId);
     /** {@code all} vrai = tous les membres (admin), sinon uniquement {@code ids}. */
     @Query("""
             select p from Payment p join fetch p.member m

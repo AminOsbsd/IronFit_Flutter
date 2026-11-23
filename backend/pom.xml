@@ -20,6 +20,7 @@
     <java.version>17</java.version>
     <jjwt.version>0.13.0</jjwt.version>
     <bouncycastle.version>1.86</bouncycastle.version>
+    <stripe.version>29.0.0</stripe.version>
   </properties>
 
   <dependencies>
@@ -43,6 +44,13 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
+
+    <!-- Stripe : uniquement pour les paiements de test éducatifs -->
+    <dependency>
+      <groupId>com.stripe</groupId>
+      <artifactId>stripe-java</artifactId>
+      <version>${stripe.version}</version>
     </dependency>
 
     <!-- MySQL (et MariaDB de XAMPP, compatible protocole MySQL) -->

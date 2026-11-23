@@ -19,6 +19,11 @@ public class Plan {
     private BigDecimal price = BigDecimal.ZERO;
     @Column(length = 60)
     private String duration;
+    private String durationUnit;
+    private Integer durationCount;
+    private String accessType;
     @Column(length = 2000)
     private String descr;
+    @Column(length = 3, columnDefinition = "varchar(3) default 'TND'") private String currency;
+    public String getCurrency() { return currency == null ? "TND" : currency; }
 }

@@ -28,4 +28,9 @@ public class Payment {
     private LocalDate paidOn;
     @Column(length = 500)
     private String note;
+    @Column(unique = true) private String stripeReference;
+    @Column(length = 2048) private String receiptUrl;
+    @Column(length = 3, columnDefinition = "varchar(3) default 'TND'") private String currency;
+    public String getCurrency() { return currency == null ? "TND" : currency; }
+    private Long amountMinor;
 }

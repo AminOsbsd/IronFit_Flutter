@@ -20,7 +20,8 @@ public final class UserDtos {
     /** Données publiques d'un compte (jamais le hachage ni la version de jeton). */
     public record UserDto(Long id, String name, String login, String email, String phone, Role role, Long planId,
                           LocalDate subEnd, String specialty, boolean active, Instant created, String planName) {
-        public static UserDto of(User u) { return of(u, null); }
+        /** À appeler dans une transaction : la formule est chargée à la demande. */
+        public static UserDto of(User u) { return of(u, u.getPlan() == null ? null : u.getPlan().getName()); }
 
         public static UserDto of(User u, String planName) {
             return new UserDto(u.getId(), u.getName(), u.getLogin(), u.getEmail(), u.getPhone(), u.getRole(), u.planId(),

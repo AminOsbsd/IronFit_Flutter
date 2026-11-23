@@ -102,4 +102,16 @@ class AuthApiTest extends ApiTestSupport {
         assertThat(users.findByLoginOrEmail("ancien").orElseThrow().getPasswordHash()).startsWith("$2");
         assertThat(post("login", Map.of("login", "ancien", "password", "1234"), null).status()).isEqualTo(200);
     }
+
+    /** Régression : « Mon abonnement » affichait « Aucune formule » car plan_name était toujours null. */
+    @Test
+    void leCompteConnecteContientLeNomDeSaFormule() throws Exception {
+        Res session = post("login", Map.of("login", "youssef", "password", "1234"), null);
+        String token = session.body().get("token").asText();
+        assertThat(session.body().get("user").get("plan_name").asText()).isEqualTo("Mensuel");
+        assertThat(get("me", token).body().get("plan_name").asText()).isEqualTo("Mensuel");
+        Res profile = call("PUT", "profile", Map.of("name", "Youssef Karray", "email", "youssef@ironfit.local"), token);
+        assertThat(profile.body().get("plan_name").asText()).isEqualTo("Mensuel");
+        assertThat(get("me", login("admin")).body().get("plan_name").isNull()).isTrue(); // aucune formule
+    }
 }

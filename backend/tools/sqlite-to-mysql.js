@@ -11,6 +11,12 @@ const { DatabaseSync } = require('node:sqlite');
 
 const file = process.argv[2];
 if (!file) { console.error('Usage : node tools/sqlite-to-mysql.js <chemin/vers/gym.db> > ironfit-import.sql'); process.exit(1); }
+const fs = require('node:fs');
+if (!fs.existsSync(file)) {
+  console.error(`Base SQLite introuvable : ${file}`);
+  console.error('Copiez gym.db dans backend/data/ ou indiquez son chemin complet.');
+  process.exit(1);
+}
 const db = new DatabaseSync(file, { readOnly: true });
 
 // table MySQL ← table SQLite, colonnes [colonne MySQL, colonne SQLite, valeur par défaut si absente (ancienne v1)]
