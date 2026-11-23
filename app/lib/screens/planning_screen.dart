@@ -1,3 +1,4 @@
+import '../widgets/member_design.dart';
 import 'package:flutter/material.dart';
 import '../core/network/api_client.dart';
 import '../core/theme/app_theme.dart';
@@ -12,7 +13,12 @@ import 'crud_screen.dart';
 /// [manage] = true : participants et pointage (admin : tous les cours ; coach : ses cours).
 class PlanningPage extends StatefulWidget {
   final bool manage;
-  const PlanningPage({super.key, this.manage = false});
+  final bool reservationsOnly;
+  const PlanningPage({
+    super.key,
+    this.manage = false,
+    this.reservationsOnly = false,
+  });
   @override
   State<PlanningPage> createState() => _PlanningPageState();
 }
@@ -36,6 +42,7 @@ class _PlanningPageState extends State<PlanningPage>
   }
 
   bool onlyMine = false;
+  int reservationFilter = 0;
   final Set<int> pending = {};
   final Set<int> uncertain = {};
   List<Json> classes = [];
@@ -47,6 +54,7 @@ class _PlanningPageState extends State<PlanningPage>
   @override
   void initState() {
     super.initState();
+    onlyMine = widget.reservationsOnly;
     WidgetsBinding.instance.addObserver(this);
     load();
   }
@@ -192,6 +200,9 @@ class _PlanningPageState extends State<PlanningPage>
     final barColor = ratio >= 1
         ? AppColors.danger
         : (ratio >= 0.8 ? AppColors.warning : cs.primary);
+    if (isMemberDesign && !manage) {
+      return MemberSessionCard(session: c, action: action(c, mine, full));
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -320,6 +331,19 @@ class _PlanningPageState extends State<PlanningPage>
     );
   }
 
+  Widget _planningLayout({required List<Widget> children}) {
+    if (!isMemberDesign) return Column(children: children);
+    final results = (children.last as Expanded).child;
+    return NestedScrollView(
+      headerSliverBuilder: (context, scrolled) => [
+        SliverToBoxAdapter(
+          child: Column(children: children.sublist(0, children.length - 1)),
+        ),
+      ],
+      body: results,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now().weekday - 1;
@@ -328,18 +352,55 @@ class _PlanningPageState extends State<PlanningPage>
         classes
             .where(
               (c) =>
-                  c['day'] == day &&
+                  (widget.reservationsOnly
+                      ? reservationFilter != 2 &&
+                            ((DateTime.tryParse(
+                                      '${c['session_date']}T${c['time']}',
+                                    )?.isBefore(DateTime.now()) ??
+                                    false) ==
+                                (reservationFilter == 1))
+                      : c['day'] == day) &&
                   (!onlyMine || isTrue(c['mine'])) &&
                   '${c['title']} ${c['coach_name'] ?? ''}'
                       .toLowerCase()
                       .contains(query),
             )
             .toList()
-          ..sort((a, b) => '${a['time']}'.compareTo('${b['time']}'));
+          ..sort((a, b) {
+            if (widget.reservationsOnly) {
+              final byDate = '${a['session_date'] ?? ''}'.compareTo(
+                '${b['session_date'] ?? ''}',
+              );
+              if (byDate != 0) return byDate;
+            }
+            return '${a['time']}'.compareTo('${b['time']}');
+          });
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Planning'),
+        title: Text(widget.reservationsOnly ? 'Mes réservations' : 'Planning'),
         actions: [
+          if (isMemberDesign && !manage)
+            IconButton(
+              tooltip: 'Choisir une date',
+              icon: const Icon(Icons.calendar_month_outlined),
+              onPressed: pending.isNotEmpty
+                  ? null
+                  : () async {
+                      final selected = await showDatePicker(
+                        context: context,
+                        initialDate: week.add(Duration(days: day)),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (selected == null || !mounted) return;
+                      setState(() {
+                        day = selected.weekday - 1;
+                        week = selected.subtract(Duration(days: day));
+                        loading = true;
+                      });
+                      await load();
+                    },
+            ),
           if (manage)
             IconButton(
               tooltip: 'Gérer les séances',
@@ -365,9 +426,12 @@ class _PlanningPageState extends State<PlanningPage>
         loading: loading,
         error: error,
         onRetry: load,
-        builder: () => Column(
+        builder: () => _planningLayout(
           children: [
-            if (!manage && !Api.isCoach && !Api.isAdmin)
+            if (!manage &&
+                !Api.isCoach &&
+                !Api.isAdmin &&
+                !widget.reservationsOnly)
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -419,7 +483,23 @@ class _PlanningPageState extends State<PlanningPage>
                 onChanged: (value) => setState(() => search = value),
               ),
             ),
-            if (!manage)
+            if (widget.reservationsOnly)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    for (var i = 0; i < 3; i++)
+                      ChoiceChip(
+                        label: Text(['À venir', 'Passées', 'Annulées'][i]),
+                        selected: reservationFilter == i,
+                        onSelected: (_) =>
+                            setState(() => reservationFilter = i),
+                      ),
+                  ],
+                ),
+              ),
+            if (!manage && !widget.reservationsOnly)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Align(
@@ -463,20 +543,23 @@ class _PlanningPageState extends State<PlanningPage>
                 ),
               ],
             ),
-            SizedBox(
-              height: 64 + MediaQuery.textScalerOf(context).scale(32),
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                children: [for (var i = 0; i < 7; i++) dayChip(i, today)],
+            if (!widget.reservationsOnly)
+              SizedBox(
+                height: 64 + MediaQuery.textScalerOf(context).scale(32),
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  children: [for (var i = 0; i < 7; i++) dayChip(i, today)],
+                ),
               ),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: SectionHeader(
-                  '${dayLabel(day)} · ${iso(week.add(Duration(days: day)))}',
+                  widget.reservationsOnly
+                      ? 'Réservations de la semaine sélectionnée'
+                      : '${dayLabel(day)} · ${iso(week.add(Duration(days: day)))}',
                 ),
               ),
             ),
@@ -490,16 +573,20 @@ class _PlanningPageState extends State<PlanningPage>
                           const SizedBox(height: 40),
                           Empty(
                             Icons.event_busy_rounded,
-                            query.isNotEmpty || onlyMine
+                            widget.reservationsOnly && reservationFilter == 2
+                                ? 'Les réservations annulées ne sont pas conservées. Vous pouvez réserver de nouveau depuis le planning.'
+                                : query.isNotEmpty || onlyMine
                                 ? 'Aucun cours ne correspond à vos filtres.'
                                 : 'Aucun cours ce jour',
-                            cta: query.isNotEmpty || onlyMine
+                            cta:
+                                !widget.reservationsOnly &&
+                                    (query.isNotEmpty || onlyMine)
                                 ? 'Effacer les filtres'
                                 : null,
                             onTap: () => setState(() {
                               search = '';
                               searchController.clear();
-                              onlyMine = false;
+                              onlyMine = widget.reservationsOnly;
                             }),
                           ),
                         ],
