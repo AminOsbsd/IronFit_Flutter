@@ -215,7 +215,7 @@ public class AiCoachServiceImpl implements AiCoachService {
             StringJoiner j = new StringJoiner(", ");
             for (var booking : booked) {
                 var c = booking.getClassSession();
-                j.add(clip(c.getTitle(), 60) + " on " + booking.getSessionDate() + " at " + c.getTime());
+                j.add(clip(c.getTitle(), 60) + " on " + day(booking.getSessionDate().getDayOfWeek().getValue() - 1) + " " + booking.getSessionDate() + " at " + c.getTime());
             }
             f.add("Booked dated classes: " + j);
         }

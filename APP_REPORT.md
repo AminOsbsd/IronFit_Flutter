@@ -569,7 +569,7 @@ Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightn
 - The system prompt contains safety rules (no medical advice, refer to professionals) and keeps the assistant in scope.
 
 ### Verification done on this branch
-The manual, OpenRouter and MySQL checks below were made **before** the November merge. After it, only the automated checks were rerun.
+The manual, OpenRouter and MySQL checks below were made **before** the November merge. After it, the automated checks and a short AI Coach check were rerun (marked below); the new screens, Stripe and MySQL were not.
 - **Automated (after the merge):**
   - backend: 106/106 tests;
   - app: 55/55 tests, web build OK, analyzer: 43 style notes, no warnings or errors.
@@ -584,6 +584,7 @@ The manual, OpenRouter and MySQL checks below were made **before** the November 
   - The `gemma-4` free models were rate-limited upstream; the fallback chain answered with Nemotron in the same request.
   - Member questions were answered in French with the user's real data in 1–4 s.
   - Knowledge base: prices, schedule and offers were answered correctly from live data (1.7 s). Before the "unknown" marking, the model **invented** Sunday opening hours; after it, it said it didn't know and pointed to the front desk (0.8 s).
+- **After the merge (23 November, real free model, backend on H2):** gym address, EUR price, Stripe test payment path and dated bookings were answered correctly. The model first got weekdays wrong, so the prompt now gives the weekday with today's date and each booking.
 - **MySQL (XAMPP MariaDB 10.4):** on first start the backend created `ironfit_db` and loaded the demo data (5 accounts, 13 workouts, 7 measurements, 3 bookings, 3 programs with 11 exercises). AI Coach answered from it with the real free model. The progress summary's arithmetic was wrong until the server started sending pre-computed totals (weight −1.9 kg, body fat −1.3 points, average RPE 7.4, 3 hard sessions); after that the numbers were right.
 
 ### Limitations
@@ -688,8 +689,8 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 - `test/backend_integration_test.dart` needs a running backend; the `integration` tag description in `dart_test.yaml` still mentions the old Node server.
 
 **Found while reviewing the November merge**
-- **Contradictory gym address:** the map uses Cebalat Ben Ammar (36.899, 10.183), while `coach-knowledge.md` gives a fictional address in Sousse. AI Coach and the map give different answers.
-- **AI Coach does not know about online payment:** `coach-knowledge.md` only describes payment at the front desk. Its prompt also does not include the detailed sets of guided workouts.
+- **Fixed:** `coach-knowledge.md` now gives the map's address (Cebalat Ben Ammar) and describes Stripe test payment and dated bookings; the prompt points to "Mon abonnement" instead of the removed "Mes paiements". The address is written in two places (`gym_location.dart` and the knowledge file), so change both together.
+- **AI Coach does not see guided-workout details:** its prompt does not include the recorded sets.
 - **Currency on admin screens:** the subscription request and renewal dialogs call `money()` without a currency, so a plan still in TND would be shown in euros.
 - **Plan prices rewritten at startup:** any TND plan named Séance, Mensuel, Trimestriel or Annuel is set to the fixed EUR price, even if the gym had changed its price.
 - Unused code: `StripeDtos` and three Stripe settings (§4). `StripeCheckoutService` is dense and duplicates the membership-activation code in `reconcile` and `webhook`.
@@ -706,5 +707,5 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 1. Rotate the leaked SMTP credential.
 2. Add Flyway once on MySQL 8+.
 3. Add CI running `./mvnw test` and `flutter analyze && flutter test`.
-4. Align the gym address and payment information between the map and `coach-knowledge.md`.
+4. Add the front-desk phone number to `coach-knowledge.md` (marked `À COMPLÉTER`).
 5. For AI Coach: persist conversations (opt-in), render basic markdown, add per-client context for coaches behind explicit consent, add a user-facing privacy notice, and move streaming to async (`SseEmitter`) if load grows.

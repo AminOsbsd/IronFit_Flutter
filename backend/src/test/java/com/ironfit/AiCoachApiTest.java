@@ -139,7 +139,8 @@ class AiCoachApiTest extends ApiTestSupport {
         booking.setSessionDate(date);booking=datedBookings.save(booking);
         String token=login("youssef");
         assertThat(chat(token,ask("Mes cours réservés ?")).status()).isEqualTo(200);
-        assertThat(LAST.get().get("body")).contains(date.toString());
+        assertThat(LAST.get().get("body")).contains(
+                date.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + " " + date);
         datedBookings.deleteById(booking.getId());
         assertThat(chat(token,ask("Mes cours réservés ?")).status()).isEqualTo(200);
         assertThat(LAST.get().get("body")).doesNotContain(date.toString());

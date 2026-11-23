@@ -15,15 +15,16 @@
 # La salle
 
 - Nom : IronFit
-- Adresse : 25 avenue Habib Bourguiba, 4000 Sousse (en face de la pharmacie centrale)
-- Téléphone de l'accueil : +216 73 100 200 ; e-mail : contact@ironfit.tn
+- Adresse : V5XM+H2V, Cebalat Ben Ammar, Tunisie. Carte et itinéraire dans l'application : « Profil » > « Nous trouver ».
+- E-mail : contact@ironfit.tn
+- Téléphone de l'accueil : À COMPLÉTER
 - Horaires du lundi au vendredi : 6 h – 22 h
 - Horaires du samedi : 8 h – 20 h
 - Horaires du dimanche : 8 h – 14 h
 - Jours fériés : 8 h – 14 h ; fermé le 1er janvier et le jour de l'Aïd el-Fitr
 - Heures d'affluence : 18 h – 20 h en semaine. Les heures les plus calmes sont 6 h – 9 h et 14 h – 17 h.
 - Accueil et vente au comptoir (abonnements, boutique) : aux heures d'ouverture.
-- Parking gratuit de 20 places derrière la salle ; arrêt de louage « Bab Jedid » à 5 minutes à pied.
+- Parking gratuit de 20 places derrière la salle.
 
 # Services
 
@@ -53,14 +54,16 @@
 
 - Suspendre son abonnement : possible une fois par an, jusqu'à 30 jours, sur justificatif (voyage, blessure), à demander à l'accueil.
 - Résiliation : les abonnements ne sont pas remboursables, mais restent valables jusqu'à leur date de fin.
-- Renouvellement : à l'accueil ou depuis l'application (onglet « Explorer » > Tarifs), avant la date d'expiration pour ne pas perdre l'accès aux cours.
+- Renouvellement : à l'accueil ou depuis l'application (« Mon espace » > « Mon abonnement », ou « Explorer » > Tarifs), avant la date d'expiration pour ne pas perdre l'accès aux cours.
 - Invité : l'offre « Amenez un ami » (voir les offres en cours) permet de venir avec un ami pour une séance.
-- Modes de paiement acceptés à l'accueil : espèces, carte bancaire, virement, chèque.
+- Paiement à l'accueil : espèces, carte bancaire, virement, chèque. La demande est validée par l'administration, qui enregistre le paiement.
+- Paiement en ligne par carte : pour payer, « Explorer » > Tarifs > choisir la formule > « Carte · Stripe test ». Via Stripe, en MODE TEST uniquement (projet scolaire) : aucune vraie somme n'est débitée, ne jamais saisir une vraie carte. Réservé aux formules en euros. L'accès est activé automatiquement après confirmation de Stripe.
+- Après un paiement, pour consulter (pas pour payer) les factures, l'historique et le renouvellement automatique : « Mon espace » > « Mon abonnement » > « Paiements en ligne ».
 
 # Utiliser l'application IronFit
 
-- S'abonner : onglet « Explorer » > Tarifs, choisir une formule ; la demande est ensuite validée par l'administration de la salle, qui enregistre le paiement.
-- Réserver un cours : onglet « Planning » (abonnement actif nécessaire). Le planning se répète chaque semaine.
+- S'abonner : onglet « Explorer » > Tarifs, choisir une formule, puis « À l'accueil » (demande validée par l'administration après paiement) ou « Carte · Stripe test » (paiement en ligne de test).
+- Réserver un cours : onglet « Planning », choisir la semaine et la date (jusqu'à 90 jours à l'avance ; l'abonnement doit être valable à cette date).
 - Demander un coach personnel : onglet « Explorer » > Coachs. Le coach accepte ou refuse la demande.
 - Enregistrer une séance : « Mon espace » > « Mes séances » ou depuis un programme (durée, RPE de 1 à 10, notes).
 - Suivre son poids et sa masse grasse : « Mon espace » > « Ma progression ».
