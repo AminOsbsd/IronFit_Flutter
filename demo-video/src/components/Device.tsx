@@ -41,9 +41,9 @@ export const usePhonePos = () => {
 type Rect = {x: number; y: number; w: number; h: number; r: number; bg: string; ring?: number};
 /** Shared element: the end of one screen becomes the start of the next (phone coordinates). */
 const morphs: {at: number; from: Rect; to: Rect}[] = [
-  {at: starts.planning, from: {x: 18, y: 386, w: 348, h: 236, r: 18, bg: '#EFECE7'}, to: {x: 16, y: 338, w: 358, h: 268, r: 16, bg: '#18191D'}},
-  {at: starts.guided, from: {x: 32, y: 528, w: 326, h: 60, r: 14, bg: colors.success}, to: {x: 125, y: 221, w: 140, h: 140, r: 70, bg: colors.amber, ring: 12}},
-  {at: starts.progress, from: {x: 125, y: 221, w: 140, h: 140, r: 70, bg: colors.amber, ring: 12}, to: {x: 38, y: 440, w: 310, h: 4, r: 2, bg: colors.amber}},
+  {at: starts.planning, from: {x: 18, y: 386, w: 348, h: 236, r: 18, bg: '#F1EDE7'}, to: {x: 16, y: 432, w: 358, h: 214, r: 24, bg: '#FDFCFA'}},
+  {at: starts.guided, from: {x: 33, y: 486, w: 324, h: 60, r: 16, bg: '#F4EBDF'}, to: {x: 125, y: 221, w: 140, h: 140, r: 70, bg: '#FF9800', ring: 12}},
+  {at: starts.progress, from: {x: 125, y: 221, w: 140, h: 140, r: 70, bg: '#FF9800', ring: 12}, to: {x: 38, y: 440, w: 310, h: 4, r: 2, bg: '#FF9800'}},
   {at: starts.coaching, from: {x: 340, y: 409, w: 16, h: 16, r: 8, bg: colors.ember}, to: {x: 33, y: 121, w: 58, h: 58, r: 29, bg: colors.amber}},
   {at: starts.coachHome, from: {x: 194, y: 386, w: 180, h: 62, r: 16, bg: colors.amber}, to: {x: 16, y: 104, w: 358, h: 92, r: 20, bg: '#26272D'}},
 ];

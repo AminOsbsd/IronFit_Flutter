@@ -6,7 +6,7 @@ import {Avatar, Box, Card, Screen} from '../components/ui';
 
 /** Rebuilt from app/lib/screens/program_screens.dart (program detail + coach comment). */
 export const CoachingScreen: React.FC<{f: number}> = ({f}) => {
-  const c = ui.light;
+  const c = ui.member;
   const ex = [['Squat', '4 × 6-8 · 70 kg · repos 2 min'], ['Développé couché', '4 × 6-8 · 60 kg · repos 2 min'], ['Soulevé de terre', '3 × 5 · 90 kg · repos 3 min']];
   const m = pop(f, 62, 13);
   return (
@@ -23,7 +23,7 @@ export const CoachingScreen: React.FC<{f: number}> = ({f}) => {
         <Card c={c} style={{height: '100%'}}>
           <div style={{display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 17}}><CheckCircle2 size={23} color={colors.success} />Séance A · 65 min</div>
           <div style={{color: c.sub, fontSize: 15, marginTop: 8}}>Difficulté 7/10 · bonnes sensations</div>
-          <div style={{marginTop: 16, background: `${colors.amber}33`, border: `2px solid ${colors.amber}`, borderRadius: 16, padding: 15, fontSize: 18, lineHeight: 1.42, fontWeight: 500, transform: `scale(${m})`, transformOrigin: '0 0', opacity: Math.min(1, m), display: 'flex', gap: 12}}><MessageSquareText size={24} color={colors.amberDeep} style={{flexShrink: 0, marginTop: 2}} /><span>{demo.comment}</span></div>
+          <div style={{marginTop: 16, background: `${c.primary}26`, border: `2px solid ${c.primary}`, borderRadius: 16, padding: 15, fontSize: 18, lineHeight: 1.42, fontWeight: 500, transform: `scale(${m})`, transformOrigin: '0 0', opacity: Math.min(1, m), display: 'flex', gap: 12}}><MessageSquareText size={24} color={colors.amberDeep} style={{flexShrink: 0, marginTop: 2}} /><span>{demo.comment}</span></div>
         </Card>
       </Box>
     </Screen>

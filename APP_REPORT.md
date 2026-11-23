@@ -696,7 +696,6 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 - **Currency on admin screens:** the subscription request and renewal dialogs call `money()` without a currency, so a plan still in TND would be shown in euros.
 - **Plan prices rewritten at startup:** any TND plan named Séance, Mensuel, Trimestriel or Annuel is set to the fixed EUR price, even if the gym had changed its price.
 - On a phone, the floating AI Coach button hides while scrolling down and returns when scrolling up or changing tab; at rest it can still cover content at the bottom right.
-- The demo video shows the member screens as they were before the redesign.
 - Unused code: `StripeDtos` and three Stripe settings (§4). `StripeCheckoutService` is dense and duplicates the membership-activation code in `reconcile` and `webhook`.
 - `ClassServiceImpl.update` loads every booking to check capacity, which will slow down as bookings grow.
 - `app/lib` calls public OpenStreetMap servers directly; their usage policies make them unsuitable for heavy production use.
