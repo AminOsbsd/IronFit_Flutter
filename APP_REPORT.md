@@ -160,7 +160,7 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 | Run backend | `cd backend && ./mvnw spring-boot:run` (or `1-lancer-serveur.bat`); serves `http://localhost:8080/api` |
 | Run app | `cd app && flutter run -d windows` / `-d chrome` / `-d emulator-5554` (or `2-lancer-app-flutter.bat`) |
 | Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 107 tests on this branch |
-| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 61 tests on this branch (44 style notes from the analyzer, no warnings or errors) |
+| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 64 tests on this branch (44 style notes from the analyzer, no warnings or errors) |
 | App ↔ backend integration tests | Start a backend on a throwaway DB (README §15), then `flutter test test/backend_integration_test.dart` |
 | Build | `flutter build web` / `windows` / `apk --release`; `./mvnw package` → `target/ironfit-backend-3.0.0.jar` |
 | Deploy | **Not determined from code.** README §18 gives production advice (TLS reverse proxy, strong secrets, `DDL_AUTO=validate`) but there is no deployment tooling. |
@@ -572,7 +572,7 @@ Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightn
 The manual, OpenRouter and MySQL checks below were made **before** the November merge. After it, the automated checks and a short AI Coach check were rerun (marked below); the new screens, Stripe and MySQL were not.
 - **Automated (after the merge):**
   - backend: 107/107 tests;
-  - app: 61/61 tests, web build OK, analyzer: 44 style notes, no warnings or errors.
+  - app: 64/64 run tests (3 skipped), web build OK, analyzer: 44 style notes, no warnings or errors.
 - **Manual:**
   - The real backend ran on in-memory H2 with demo data and talked to a local mock OpenRouter; the Flutter web build was used in the browser as `youssef`.
   - Desktop side panel and phone bottom sheet, in light and dark mode: OK.
@@ -658,7 +658,8 @@ sequenceDiagram
 - `LaunchSplash`: a 2.1 s animated introduction while the session loads, skipped when returning from Stripe, with a failure state if loading fails.
 - **Member redesign** (second merge, commit `20f33f6`): members get their own orange, ivory and charcoal theme (`memberTheme`); coaches, admins and the sign-in screen keep theirs. New home banner, session cards and planning header with a date picker.
 - **Mes réservations** has À venir / Passées / Annulées filters for the week shown. Cancelled bookings are deleted by the API, so that tab cannot list them.
-- Tabs keep their state when switching. The floating AI Coach button, removed for members in the first merge, is back for every role.
+- Tabs keep their state when switching. The floating AI Coach button, removed for members in the first merge, is back for every role. On a phone it hides while scrolling down.
+- The transparent logo has charcoal lettering in light mode (member home and side rail). The member home's "Planning" link sits next to its title, clear of the AI Coach button.
 
 ### 13.7 Tests added
 | Area | Tests |
@@ -667,7 +668,7 @@ sequenceDiagram
 | Dated bookings (`DatedBookingTest`) | 5 |
 | Currency and memberships (`CurrencyMigrationTest` 1, `CurrencyTest` 1, `MembershipRulesTest` 3) | 5 |
 | AI Coach with dated bookings | 1 |
-| Flutter: splash, location routes, payments return, first package, planning, attendance, currency, AI Coach entry points, member redesign | 31 more than before (61 in total) |
+| Flutter: splash, location routes, payments return, first package, planning, attendance, currency, AI Coach entry points, member redesign | 34 more than before (64 in total) |
 
 Stripe tests use fixtures: no real Stripe payment was made as part of this merge check.
 
@@ -694,8 +695,7 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 - **AI Coach does not see guided-workout details:** its prompt does not include the recorded sets.
 - **Currency on admin screens:** the subscription request and renewal dialogs call `money()` without a currency, so a plan still in TND would be shown in euros.
 - **Plan prices rewritten at startup:** any TND plan named Séance, Mensuel, Trimestriel or Annuel is set to the fixed EUR price, even if the gym had changed its price.
-- **Logo unreadable on the member home in light mode:** the transparent logo's white lettering sits on a light background, so only the mountain shows.
-- The floating AI Coach button can cover content near the bottom right, such as the "Planning" link on the phone home.
+- On a phone, the floating AI Coach button hides while scrolling down and returns when scrolling up or changing tab; at rest it can still cover content at the bottom right.
 - The demo video shows the member screens as they were before the redesign.
 - Unused code: `StripeDtos` and three Stripe settings (§4). `StripeCheckoutService` is dense and duplicates the membership-activation code in `reconcile` and `webhook`.
 - `ClassServiceImpl.update` loads every booking to check capacity, which will slow down as bookings grow.
