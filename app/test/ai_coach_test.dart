@@ -168,13 +168,11 @@ void main() {
     }
 
     Future<void> openMemberChat(WidgetTester tester) async {
-      await tester.tap(find.byTooltip('Menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ListTile, 'AI Coach'));
+      await tester.tap(find.byTooltip('AI Coach'));
       await tester.pumpAndSettle();
     }
 
-    testWidgets('le menu latéral remplace le bouton flottant ; le chat répond et conserve son historique', (tester) async {
+    testWidgets('le bouton flottant est disponible sur tous les onglets et conserve la conversation', (tester) async {
       await signedIn(athlete, {
         'GET ai-coach/status': {'enabled': true, 'model': 'test/model'},
         'POST ai-coach/chat': sse(['Bravo Youssef, ', 'continue comme ça !']),
@@ -184,7 +182,7 @@ void main() {
       for (final tab in ['Planning', 'Explorer', 'Mon espace', 'Profil', 'Accueil']) {
         await tester.tap(find.text(tab).last);
         await tester.pumpAndSettle();
-        expect(find.byType(FloatingActionButton), findsNothing, reason: 'onglet $tab');
+        expect(find.byType(FloatingActionButton), findsOneWidget, reason: 'onglet $tab');
       }
 
       await openMemberChat(tester);
@@ -237,12 +235,12 @@ void main() {
       expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
     });
 
-    testWidgets('member side panel fits a narrow phone and keyboard', (tester) async {
+    testWidgets('member chat sheet fits a narrow phone and keyboard', (tester) async {
       await signedIn(athlete, {'GET ai-coach/status': {'enabled': true}});
       await open(tester, width: 320);
       await openMemberChat(tester);
-      expect(find.byType(BottomSheet), findsNothing);
-      expect(tester.widget<AiCoachPanel>(find.byType(AiCoachPanel)).wide, isTrue);
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(tester.widget<AiCoachPanel>(find.byType(AiCoachPanel)).wide, isFalse);
       tester.view.viewInsets = const FakeViewPadding(bottom: 300);
       await tester.pumpAndSettle();
       final input = tester.getRect(find.byType(TextField));
@@ -252,10 +250,10 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('member desktop opens AI from the navigation rail', (tester) async {
+    testWidgets('member desktop opens AI from the floating button', (tester) async {
       await signedIn(athlete, {'GET ai-coach/status': {'enabled': true}});
       await open(tester, width: 1300);
-      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.byType(FloatingActionButton), findsOneWidget);
       await tester.tap(find.byTooltip('AI Coach'));
       await tester.pumpAndSettle();
       expect(find.byType(AiCoachPanel), findsOneWidget);

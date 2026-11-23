@@ -1,3 +1,5 @@
+import '../widgets/member_design.dart';
+import '../widgets/member_fitness_hero.dart';
 import 'guided_workout_screen.dart';
 import 'package:flutter/material.dart';
 import '../core/network/api_client.dart';
@@ -139,6 +141,29 @@ class _ProgramListState extends State<ProgramList> {
         padding: const EdgeInsets.all(12),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
+          if (isMemberDesign) ...[
+            const MemberFitnessHero(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Un corps fort,\nun esprit serein.',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Votre progression commence avec un programme qui vous ressemble.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            const SectionHeader('Mes programmes'),
+          ],
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
@@ -147,15 +172,24 @@ class _ProgramListState extends State<ProgramList> {
               label: const Text('Nouveau programme'),
             ),
           ),
-          if (list.isEmpty) Empty(Icons.list_alt, widget.emptyText),
+          if (list.isEmpty)
+            isMemberDesign
+                ? MemberEmptyCard(
+                    message: widget.emptyText,
+                    action: 'Créer mon programme',
+                    onTap: create,
+                  )
+                : Empty(Icons.list_alt, widget.emptyText),
           for (final p in list)
             Card(
               child: ListTile(
-                leading: IconBadge(
-                  p['coach_id'] == null
-                      ? Icons.person_rounded
-                      : Icons.sports_rounded,
-                ),
+                leading: isMemberDesign
+                    ? const MemberIllustration(size: 60, strength: true)
+                    : IconBadge(
+                        p['coach_id'] == null
+                            ? Icons.person_rounded
+                            : Icons.sports_rounded,
+                      ),
                 title: Text(
                   '${p['title']}',
                   style: TextStyle(

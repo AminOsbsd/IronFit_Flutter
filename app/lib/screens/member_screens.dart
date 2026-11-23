@@ -1,3 +1,6 @@
+import '../widgets/member_design.dart';
+import '../core/theme/brand.dart';
+import 'planning_screen.dart';
 import '../widgets/member_fitness_hero.dart';
 import 'membership_screen.dart';
 import 'stripe_payments_screen.dart';
@@ -198,14 +201,25 @@ class _MemberHomeState extends State<MemberHome> {
     final active = me.hasActiveSubscription;
     final pending = reqs.where((r) => r['status'] == 'pending').toList();
     final dow = DateTime.now().weekday - 1;
-    final mine = classes.where((c) => isTrue(c['mine'])).toList()
-      ..sort((a, b) {
-        final ka = (((a['day'] as int) - dow) + 7) % 7,
-            kb = (((b['day'] as int) - dow) + 7) % 7;
-        return ka != kb
-            ? ka.compareTo(kb)
-            : '${a['time']}'.compareTo('${b['time']}');
-      });
+    final mine =
+        classes
+            .where(
+              (c) =>
+                  isTrue(c['mine']) &&
+                  (!isMemberDesign ||
+                      DateTime.tryParse(
+                            '${c['session_date']}T${c['time']}',
+                          )?.isBefore(DateTime.now()) !=
+                          true),
+            )
+            .toList()
+          ..sort((a, b) {
+            final ka = (((a['day'] as int) - dow) + 7) % 7,
+                kb = (((b['day'] as int) - dow) + 7) % 7;
+            return ka != kb
+                ? ka.compareTo(kb)
+                : '${a['time']}'.compareTo('${b['time']}');
+          });
     final ago7 = DateTime.now().subtract(const Duration(days: 7));
     final week = workouts
         .where(
@@ -226,20 +240,174 @@ class _MemberHomeState extends State<MemberHome> {
         .toList();
     final activePrograms = programs.where((p) => isTrue(p['active'])).toList();
     final cs = Theme.of(context).colorScheme;
+    final membershipCards = <Widget>[
+      memberCard(),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          icon: const Icon(Icons.card_membership_outlined),
+          label: const Text('Gérer mon abonnement'),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MembershipPage()),
+            );
+            if (mounted) load();
+          },
+        ),
+      ),
+    ];
+    final courseCards = <Widget>[
+      SectionHeader(
+        'Mes prochains cours',
+        action: TextButton(
+          onPressed: () => widget.goTab(1),
+          child: const Text('Planning'),
+        ),
+      ),
+      if (mine.isEmpty && !_failures.containsKey('les cours'))
+        Card(
+          child: Empty(
+            Icons.event_rounded,
+            'Aucun cours réservé.',
+            cta: 'Voir le planning',
+            onTap: () => widget.goTab(1),
+          ),
+        )
+      else
+        for (final c in mine.take(3))
+          if (isMemberDesign)
+            MemberSessionCard(
+              session: c,
+              action: TextButton.icon(
+                onPressed: () => widget.goTab(1),
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Voir le planning'),
+              ),
+            )
+          else
+            Card(
+              child: ListTile(
+                leading: const IconBadge(
+                  Icons.check_circle_rounded,
+                  color: AppColors.success,
+                ),
+                title: Text('${c['title']}'),
+                subtitle: Text(
+                  '${c['session_date'] ?? dayLabel(c['day'] as int)} · ${c['time']} · ${c['coach_name'] ?? '—'}',
+                ),
+              ),
+            ),
+    ];
+    final programCards = <Widget>[
+      SectionHeader(
+        'Mes programmes',
+        action: TextButton(
+          onPressed: () => widget.goTab(3),
+          child: const Text('Tout voir'),
+        ),
+      ),
+      if (activePrograms.isEmpty && !_failures.containsKey('les programmes'))
+        isMemberDesign
+            ? MemberEmptyCard(
+                message: 'Aucun programme actif.',
+                action: 'Créer ou trouver un coach',
+                onTap: () => widget.goTab(3),
+              )
+            : Card(
+                child: Empty(
+                  Icons.list_alt_rounded,
+                  'Aucun programme actif.',
+                  cta: 'Créer ou trouver un coach',
+                  onTap: () => widget.goTab(3),
+                ),
+              )
+      else
+        for (final p in activePrograms.take(3))
+          Card(
+            child: ListTile(
+              leading: IconBadge(
+                p['coach_id'] == null
+                    ? Icons.person_rounded
+                    : Icons.sports_rounded,
+              ),
+              title: Text('${p['title']}'),
+              subtitle: Text(
+                '${p['coach_id'] == null ? 'Personnel' : 'Par ${p['coach_name']}'} · ${p['sessions']} séance(s)${p['last_done'] == null ? '' : ' · dernière ${p['last_done']}'}',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProgramDetailPage(p['id'] as int),
+                  ),
+                );
+                load();
+              },
+            ),
+          ),
+    ];
+    final activityCards = <Widget>[
+      LayoutBuilder(
+        builder: (context, constraints) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            SizedBox(
+              width: constraints.maxWidth < (isMemberDesign ? 340 : 420)
+                  ? constraints.maxWidth
+                  : (constraints.maxWidth - 16) / 3,
+              child: kpiCard(
+                context,
+                Icons.local_fire_department_rounded,
+                'Séances (7 j)',
+                _failures.containsKey('les entraînements') ? '—' : '$week',
+                color: AppColors.ember,
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < (isMemberDesign ? 340 : 420)
+                  ? (constraints.maxWidth - 8) / 2
+                  : (constraints.maxWidth - 16) / 3,
+              child: kpiCard(
+                context,
+                Icons.event_available_rounded,
+                'Réservations',
+                _failures.containsKey('les cours') ? '—' : '${mine.length}',
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < (isMemberDesign ? 340 : 420)
+                  ? (constraints.maxWidth - 8) / 2
+                  : (constraints.maxWidth - 16) / 3,
+              child: kpiCard(
+                context,
+                Icons.monitor_weight_rounded,
+                'Poids',
+                weight,
+                color: AppColors.info,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
     return Scaffold(
       appBar: AppBar(
-        leading:
-            !Api.isCoach &&
-                !Api.isAdmin &&
-                MediaQuery.sizeOf(context).width < 900
-            ? IconButton(
-                tooltip: 'Menu',
-                icon: const Icon(Icons.menu_rounded),
-                onPressed: () => Scaffold.maybeOf(context)?.openDrawer(),
-              )
-            : null,
-        title: Text('Bonjour, ${me.firstName} 👋'),
+        title: isMemberDesign
+            ? const BrandLogo(size: 58, transparent: true)
+            : Text('Bonjour, ${me.firstName} 👋'),
         actions: [
+          if (isMemberDesign)
+            IconButton(
+              tooltip: 'Mon profil',
+              onPressed: () => widget.goTab(4),
+              icon: CircleAvatar(
+                radius: 17,
+                child: Text(me.firstName.isEmpty ? 'I' : me.firstName[0]),
+              ),
+            ),
           NotificationBell(page: () => const NotificationsPage()),
           IconButton(
             tooltip: 'Actualiser',
@@ -279,31 +447,17 @@ class _MemberHomeState extends State<MemberHome> {
                     ),
                   ),
                 ),
-              memberCard(),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.card_membership_outlined),
-                  label: const Text('Gérer mon abonnement'),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const MembershipPage()),
-                    );
-                    if (mounted) load();
-                  },
-                ),
-              ),
+              if (!isMemberDesign) ...membershipCards,
               MemberFitnessHero(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'VOTRE PROCHAIN OBJECTIF',
+                      isMemberDesign
+                          ? 'Bonjour, ${me.firstName} 👋'
+                          : 'VOTRE PROCHAIN OBJECTIF',
                       style: TextStyle(
-                        color: Api.isCoach || Api.isAdmin
-                            ? AppColors.amber
-                            : AppColors.amberText,
+                        color: AppColors.amber,
                         letterSpacing: 1.2,
                         fontSize: 12,
                       ),
@@ -312,23 +466,19 @@ class _MemberHomeState extends State<MemberHome> {
                     Text(
                       activePrograms.isNotEmpty
                           ? '${activePrograms.first['title']}'
+                          : isMemberDesign
+                          ? 'Prêt à atteindre vos objectifs ?'
                           : 'Votre prochaine séance commence ici',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
-                            color: Api.isCoach || Api.isAdmin
-                                ? Colors.white
-                                : cs.onSurface,
+                            color: Colors.white,
                             fontWeight: FontWeight.w800,
                           ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Retrouvez votre programme ou réservez un cours à la salle.',
-                      style: TextStyle(
-                        color: Api.isCoach || Api.isAdmin
-                            ? Colors.white70
-                            : cs.onSurfaceVariant,
-                      ),
+                      style: TextStyle(color: Colors.white70),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
@@ -357,6 +507,8 @@ class _MemberHomeState extends State<MemberHome> {
                   ],
                 ),
               ),
+              const SizedBox(height: 18),
+              if (isMemberDesign) ...membershipCards,
               if (pending.isNotEmpty)
                 Card(
                   margin: const EdgeInsets.only(top: 12),
@@ -401,125 +553,16 @@ class _MemberHomeState extends State<MemberHome> {
                   ),
                 ),
               const SizedBox(height: 12),
-              LayoutBuilder(
-                builder: (context, constraints) => Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SizedBox(
-                      width: constraints.maxWidth < 420
-                          ? constraints.maxWidth
-                          : (constraints.maxWidth - 16) / 3,
-                      child: kpiCard(
-                        context,
-                        Icons.local_fire_department_rounded,
-                        'Séances (7 j)',
-                        _failures.containsKey('les entraînements')
-                            ? '—'
-                            : '$week',
-                        color: AppColors.ember,
-                      ),
-                    ),
-                    SizedBox(
-                      width: constraints.maxWidth < 420
-                          ? (constraints.maxWidth - 8) / 2
-                          : (constraints.maxWidth - 16) / 3,
-                      child: kpiCard(
-                        context,
-                        Icons.event_available_rounded,
-                        'Réservations',
-                        _failures.containsKey('les cours')
-                            ? '—'
-                            : '${mine.length}',
-                      ),
-                    ),
-                    SizedBox(
-                      width: constraints.maxWidth < 420
-                          ? (constraints.maxWidth - 8) / 2
-                          : (constraints.maxWidth - 16) / 3,
-                      child: kpiCard(
-                        context,
-                        Icons.monitor_weight_rounded,
-                        'Poids',
-                        weight,
-                        color: AppColors.info,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SectionHeader(
-                'Mes programmes',
-                action: TextButton(
-                  onPressed: () => widget.goTab(3),
-                  child: const Text('Tout voir'),
-                ),
-              ),
-              if (activePrograms.isEmpty &&
-                  !_failures.containsKey('les programmes'))
-                Card(
-                  child: Empty(
-                    Icons.list_alt_rounded,
-                    'Aucun programme actif.',
-                    cta: 'Créer ou trouver un coach',
-                    onTap: () => widget.goTab(3),
-                  ),
-                )
-              else
-                for (final p in activePrograms.take(3))
-                  Card(
-                    child: ListTile(
-                      leading: IconBadge(
-                        p['coach_id'] == null
-                            ? Icons.person_rounded
-                            : Icons.sports_rounded,
-                      ),
-                      title: Text('${p['title']}'),
-                      subtitle: Text(
-                        '${p['coach_id'] == null ? 'Personnel' : 'Par ${p['coach_name']}'} · ${p['sessions']} séance(s)${p['last_done'] == null ? '' : ' · dernière ${p['last_done']}'}',
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ProgramDetailPage(p['id'] as int),
-                          ),
-                        );
-                        load();
-                      },
-                    ),
-                  ),
-              SectionHeader(
-                'Mes prochains cours',
-                action: TextButton(
-                  onPressed: () => widget.goTab(1),
-                  child: const Text('Planning'),
-                ),
-              ),
-              if (mine.isEmpty && !_failures.containsKey('les cours'))
-                Card(
-                  child: Empty(
-                    Icons.event_rounded,
-                    'Aucun cours réservé.',
-                    cta: 'Voir le planning',
-                    onTap: () => widget.goTab(1),
-                  ),
-                )
-              else
-                for (final c in mine.take(3))
-                  Card(
-                    child: ListTile(
-                      leading: const IconBadge(
-                        Icons.check_circle_rounded,
-                        color: AppColors.success,
-                      ),
-                      title: Text('${c['title']}'),
-                      subtitle: Text(
-                        '${c['session_date'] ?? dayLabel(c['day'] as int)} · ${c['time']} · ${c['coach_name'] ?? '—'}',
-                      ),
-                    ),
-                  ),
+              if (isMemberDesign) ...[
+                ...courseCards,
+                ...programCards,
+                const SectionHeader('Votre activité'),
+                ...activityCards,
+              ] else ...[
+                ...activityCards,
+                ...programCards,
+                ...courseCards,
+              ],
               if (ann.isNotEmpty) const SectionHeader('Annonces'),
               for (final a in ann.take(2))
                 Card(
@@ -889,6 +932,15 @@ class _ExplorePageState extends State<ExplorePage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Explorer'),
+          flexibleSpace: isMemberDesign
+              ? Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 70),
+                    child: MemberIllustration(size: 54),
+                  ),
+                )
+              : null,
           bottom: const TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
@@ -955,7 +1007,7 @@ class MySpacePage extends StatelessWidget {
                   Text(
                     'Chaque séance compte.',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: Colors.white,
                       fontSize: 25,
                       fontWeight: FontWeight.w700,
                     ),
@@ -963,10 +1015,7 @@ class MySpacePage extends StatelessWidget {
                   SizedBox(height: 8),
                   Text(
                     'Vos programmes, vos efforts, votre progression.',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      height: 1.5,
-                    ),
+                    style: TextStyle(color: Colors.white70, height: 1.5),
                   ),
                 ],
               ),
@@ -994,6 +1043,13 @@ class MySpacePage extends StatelessWidget {
             ProgressPage(memberId: Api.myId!, title: 'Ma progression'),
             color: AppColors.info,
           ),
+          if (isMemberDesign)
+            item(
+              Icons.event_available_rounded,
+              'Mes réservations',
+              'Cours à venir et vérification de présence',
+              const PlanningPage(reservationsOnly: true),
+            ),
           const SectionHeader('Suivi'),
           item(
             Icons.sports_rounded,

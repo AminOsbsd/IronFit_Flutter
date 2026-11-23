@@ -46,8 +46,9 @@ void main() {
     );
     await tester.tap(find.text('Effacer les filtres'));
     await tester.pumpAndSettle();
-    expect(find.text('Yoga'), findsOneWidget);
     expect(find.text('Strength'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Yoga'), 180, scrollable: find.byType(Scrollable).last);
+    expect(find.text('Yoga'), findsOneWidget);
     expect(
       tester.widget<TextFormField>(find.byType(TextFormField)).controller!.text,
       isEmpty,

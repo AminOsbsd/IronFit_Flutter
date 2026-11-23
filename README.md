@@ -46,7 +46,7 @@ IronFit est une plateforme de gestion de salle de sport composée :
 | Notifications (abonnement, coaching, programme, commentaire, annonce, cours annulé) | Notifications (nouvelle demande, séance terminée…) | Notifications |
 | **AI Coach** : conseils personnalisés à partir de ses programmes, séances, mesures et réservations | **AI Coach** : aide à la programmation et au suivi des clients (chiffres agrégés) | **AI Coach** : aide à la gestion de la salle (chiffres agrégés) |
 
-**AI Coach** : pour les membres, accès depuis **Accueil → Menu → AI Coach** sur téléphone et depuis le rail latéral sur ordinateur. Le chat s’ouvre dans un panneau latéral sans bouton flottant sur le contenu. Les coachs et administrateurs conservent leur accès existant. Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
+**AI Coach** : bouton flottant en bas à droite sur les onglets principaux, accessible aux membres comme aux coachs et administrateurs. Le chat s’ouvre dans une feuille sur téléphone et un panneau sur grand écran. Les réponses arrivent en streaming depuis OpenRouter, **via le backend** (la clé n'est jamais dans l'application) — voir [§9.1](#91-ai-coach-openrouter).
 
 **Parcours récents** : écran Abonnement unifié, conservation de l'état des onglets, réservations par date et par semaine, durées d'adhésion structurées, entraînements guidés avec séries / répétitions / charges et minuteur de repos, suivi du volume enregistré. Voir [les règles des réservations et adhésions](backend/DATED_MEMBERSHIPS.txt).
 
@@ -276,7 +276,7 @@ Le backend lit `backend/.env` s'il existe (modèle : [`backend/.env.example`](ba
 
 1. Créer une clé sur [openrouter.ai/keys](https://openrouter.ai/keys) (et ajouter un peu de crédit).
 2. Copier `backend/.env.example` en `backend/.env` (non versionné) et renseigner `OPENROUTER_API_KEY=sk-or-v1-…` — ou définir la variable d'environnement (PowerShell : `$env:OPENROUTER_API_KEY="sk-or-v1-…"`). Facultatif : `OPENROUTER_MODEL` (par défaut `anthropic/claude-haiku-5.5`, peu coûteux ; liste sur [openrouter.ai/models](https://openrouter.ai/models)). **Gratuit** (testé en novembre 2026) : `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free` avec `OPENROUTER_FALLBACK_MODELS=nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free` — premier mot en ~0,4 s ; limite de 50 requêtes/jour sur un compte sans crédit, modèles parfois saturés (d'où les secours).
-3. Redémarrer le backend, ouvrir l'application, ouvrir **AI Coach** (membre : menu de l’accueil ou rail latéral ; coach/admin : bouton flottant).
+3. Redémarrer le backend, ouvrir l'application, ouvrir **AI Coach** avec le bouton flottant en bas à droite.
 
 Fonctionnement : l'application envoie la conversation de la session à `POST /api/ai-coach/chat` (avec le jeton JWT) ; le backend construit le prompt système avec les données IronFit **de l'utilisateur connecté** (abonnement, programmes actifs et exercices, 8 dernières séances, mesures, cours réservés, coach ; uniquement des chiffres agrégés pour l'espace coach et l'administration ; prénom seulement, ni e-mail, ni téléphone, ni identifiant), appelle OpenRouter et renvoie la réponse en flux SSE. Protections : 2 000 caractères par message, 20 messages d'historique, `AI_RATE_LIMIT` messages/minute/utilisateur, délais `AI_TIMEOUT_SECONDS` / `AI_MAX_DURATION_SECONDS`, messages d'erreur clairs (clé invalide, crédit épuisé, 429, délai dépassé, réseau). Sans clé, le chat affiche « AI Coach n'est pas encore configuré » et le reste de l'application fonctionne normalement.
 
@@ -649,3 +649,21 @@ L’API existante `POST /api/classes/{id}/present` accepte `member_id`, `session
 Le cours ne stocke pas d’heure de fin : la vérification est disponible à partir de son heure de début, et peut être faite après le cours. Les réservations commencées/vérifiées ne peuvent plus être annulées par le membre.
 
 Validation : 106 tests backend sur H2 et 53 tests Flutter unitaires/widgets réussis. Les tests Flutter contre un serveur réel sont exclus ; aucun appel réel Stripe/OpenRouter ni modification de la base utilisateur n’est nécessaire pour ces tests.
+
+
+### Interface membre : refonte visuelle
+
+- Thème orange, ivoire et anthracite réservé aux membres ; les thèmes coach/admin restent indépendants.
+- Accueil : logo existant, profil, notifications, bannière 3D, carte membre, cours réservés, programmes et activité réelle.
+- Programmes : bannière, illustrations et création conservée ; Explorer et Mon espace réutilisent les mêmes cartes et couleurs.
+- Planning : en-tête défilant sur petit écran, sélection de date par calendrier, navigation hebdomadaire, recherche, disponibilités et réservation existantes.
+- **Mon espace → Mes réservations** : filtres À venir / Passées / Annulées, pour la semaine affichée ; les cartes reflètent la présence confirmée, l’absence ou la vérification en attente.
+- L’API supprime les réservations annulées : leur historique ne peut pas être affiché sans évolution backend. L’onglet Annulées l’indique explicitement. Aucune salle ni statistique de calories n’est inventée lorsque l’API ne la fournit pas.
+- AI Coach reste un bouton flottant pour les membres, coachs et administrateurs.
+
+Les composants sont dans `app/lib/widgets/member_design.dart` et `member_fitness_hero.dart`. Les services existants `classes`, `book`, `programs`, `workouts`, `measures`, le catalogue et les paiements restent utilisés sans changement de contrat.
+Les tests `member_redesign_test.dart` couvrent les petits écrans, le bureau, les filtres de réservations et le texte agrandi. Les captures facultatives (`CAPTURE_UI=true`, `--update-goldens`) sont écrites dans `app/build/ui-review` ; les chemins de polices de prévisualisation peuvent être fournis avec `PREVIEW_FONT` et `PREVIEW_ICONS`.
+
+Validation de cette refonte : 60 tests Flutter unitaires/widgets réussis (exit 0), compilation Web réussie (exit 0), analyse Flutter : 0 erreur, 0 avertissement et 82 notices informatives (exit 1). Les captures ont été vérifiées avec des données de test ; les parcours contre un serveur réel ne font pas partie de cette validation. Aucun fichier backend n’a été modifié pour cette refonte.
+
+Revue avant commit : les réservations hebdomadaires sont triées par date puis heure. Les 60 tests existants ont été relancés avec succès ; après la correction du tri, les 8 tests ciblés de planning/réservations passent également. Le bouton d’un cours sur l’accueil ouvre le planning : une fiche détaillée dédiée reste à développer. Explorer et Profil conservent leurs structures existantes avec le thème membre ; il ne s’agit pas d’une reproduction exacte de chaque écran de la maquette.
