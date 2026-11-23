@@ -1,3 +1,4 @@
+import 'widgets/member_design.dart';
 import 'screens/stripe_payments_screen.dart';
 import 'screens/launch_splash.dart';
 import 'package:flutter/material.dart';
@@ -42,8 +43,12 @@ class IronFitApp extends StatelessWidget {
         title: 'IronFit',
         debugShowCheckedModeBanner: false,
         navigatorKey: Api.navKey,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
+        theme: isMemberDesign
+            ? memberTheme(AppTheme.light())
+            : AppTheme.light(),
+        darkTheme: isMemberDesign
+            ? memberTheme(AppTheme.dark())
+            : AppTheme.dark(),
         themeMode: ThemeMode.system,
         locale: const Locale('fr'),
         supportedLocales: const [Locale('fr'), Locale('en')],

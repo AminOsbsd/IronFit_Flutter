@@ -23,7 +23,7 @@ import 'risk_screen.dart';
 ///  - Coach « Espace coach »      : Accueil · Planning · Clients · Gestion · Profil
 ///  - Admin (administration)      : Accueil · Planning · Administration · Profil
 /// Écran étroit : barre de navigation en bas. Écran large (≥ 900 px) : rail latéral avec le logo.
-/// Les membres accèdent à AI Coach depuis le menu latéral.
+/// AI Coach reste accessible par son bouton flottant.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
   @override
@@ -145,9 +145,7 @@ class _HomeShellState extends State<HomeShell> {
         if (width >= 900) {
           final extended = width >= 1200;
           return Scaffold(
-            floatingActionButton: Api.isCoach || Api.isAdmin
-                ? const AiCoachButton(extended: true)
-                : null,
+            floatingActionButton: const AiCoachButton(extended: true),
             body: Row(
               children: [
                 NavigationRail(
@@ -164,7 +162,7 @@ class _HomeShellState extends State<HomeShell> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: BrandLogo(size: extended ? 132 : 72),
+                          child: BrandLogo(size: extended ? 132 : 72, transparent: true),
                         ),
                         if (Api.isCoach) ...[
                           const SizedBox(height: 12),
@@ -176,14 +174,6 @@ class _HomeShellState extends State<HomeShell> {
                       ],
                     ),
                   ),
-                  trailing: !Api.isCoach && !Api.isAdmin
-                      ? IconButton(
-                          tooltip: 'AI Coach',
-                          icon: const Icon(Icons.smart_toy_outlined),
-                          onPressed: () =>
-                              openAiCoach(context, sidePanel: true),
-                        )
-                      : null,
                   destinations: [
                     for (final d in dests)
                       NavigationRailDestination(
@@ -205,48 +195,7 @@ class _HomeShellState extends State<HomeShell> {
 
         return Scaffold(
           body: body,
-          floatingActionButton: Api.isCoach || Api.isAdmin
-              ? const AiCoachButton()
-              : null,
-          drawer: !Api.isCoach && !Api.isAdmin
-              ? Drawer(
-                  child: SafeArea(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: BrandLogo(size: 100),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
-                          child: Text(
-                            'Votre espace IronFit',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.smart_toy_outlined),
-                          title: const Text('AI Coach'),
-                          subtitle: const Text('Conseils et accompagnement'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            openAiCoach(context, sidePanel: true);
-                          },
-                        ),
-                        const Spacer(),
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text('Un peu plus fort, chaque jour.'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : null,
+          floatingActionButton: const AiCoachButton(),
           bottomNavigationBar: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
