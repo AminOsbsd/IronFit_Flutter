@@ -1,5 +1,7 @@
 # ── Secrets & local config ──────────────────────────────────────────
 backend/.env
+.env
+node_modules/
 backend/data/
 *.sql
 

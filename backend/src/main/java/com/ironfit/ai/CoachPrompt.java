@@ -100,7 +100,7 @@ public final class CoachPrompt {
         sb.append(GYM_RULE).append('\n');
         sb.append("GYM KNOWLEDGE BASE (written by the gym staff):\n");
         sb.append(knowledge == null || knowledge.isBlank() ? "(empty)" : knowledge.trim()).append("\n\n");
-        sb.append("GYM DATA (live from the IronFit database, prices in DT = Tunisian dinar):\n");
+        sb.append("GYM DATA (live from the IronFit database, each plan price carries its own currency: quote it exactly, EUR = euro, TND = Tunisian dinar (DT), never convert):\n");
         if (gymFacts == null || gymFacts.isEmpty()) sb.append("- (none)\n");
         else for (String g : gymFacts) sb.append("- ").append(g).append('\n');
         sb.append('\n');
