@@ -1,0 +1,29 @@
+{
+  "name": "ironfit-demo-video",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "audio": "node scripts/generate-audio.mjs",
+    "postinstall": "node -e \"require('fs').existsSync('public/audio/music.wav')||require('child_process').execSync('node scripts/generate-audio.mjs',{stdio:'inherit'})\"",
+    "render": "remotion render src/index.ts Demo out/demo-2min.mp4 --codec=h264 --crf=17 --pixel-format=yuv420p --color-space=bt709",
+    "render:vertical": "remotion render src/index.ts DemoVertical out/demo-2min-vertical.mp4 --codec=h264 --crf=17 --pixel-format=yuv420p --color-space=bt709",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.546",
+    "@remotion/fonts": "4.0.546",
+    "@remotion/layout-utils": "4.0.546",
+    "lucide-react": "0.468.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.546"
+  },
+  "devDependencies": {
+    "@fontsource-variable/archivo": "5.2.5",
+    "@fontsource-variable/roboto": "5.2.5",
+    "@types/node": "22.10.5",
+    "@types/react": "19.1.0",
+    "typescript": "5.7.3"
+  }
+}
