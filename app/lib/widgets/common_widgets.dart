@@ -263,7 +263,15 @@ class _NotificationBellState extends State<NotificationBell> {
 class SectionHeader extends StatelessWidget {
   final String title;
   final Widget? action;
-  const SectionHeader(this.title, {super.key, this.action});
+
+  /// Place l'action juste après le titre plutôt qu'au bord droit (zone du bouton AI Coach).
+  final bool inlineAction;
+  const SectionHeader(
+    this.title, {
+    super.key,
+    this.action,
+    this.inlineAction = false,
+  });
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(2, 22, 2, 8),
@@ -278,7 +286,8 @@ class SectionHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(
+        Flexible(
+          fit: inlineAction ? FlexFit.loose : FlexFit.tight,
           child: Text(title, style: Theme.of(context).textTheme.titleMedium),
         ),
         ?action,

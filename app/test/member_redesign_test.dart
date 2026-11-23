@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ironfit/main.dart';
 import 'package:ironfit/core/theme/app_theme.dart';
+import 'package:ironfit/core/theme/brand.dart';
 import 'package:ironfit/screens/planning_screen.dart';
 import 'package:ironfit/screens/program_screens.dart';
 import 'package:ironfit/widgets/member_design.dart';
@@ -183,5 +184,42 @@ void main() {
       lessThan(tester.getTopLeft(find.text('Later booking')).dy),
     );
     expect(tester.takeException(), isNull);
+  });
+  for (final dark in [false, true]) {
+    testWidgets('home logo is readable (dark: $dark)', (tester) async {
+      await signedIn(athlete);
+      useScreen(tester, width: 375, height: 812);
+      tester.platformDispatcher.platformBrightnessTestValue = dark
+          ? Brightness.dark
+          : Brightness.light;
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      await tester.pumpWidget(const IronFitApp());
+      await tester.pumpAndSettle();
+      final logo = tester.widget<BrandLogo>(find.byType(BrandLogo));
+      expect(logo.darkText, !dark);
+    });
+  }
+  testWidgets('AI Coach button hides while scrolling down the phone home', (
+    tester,
+  ) async {
+    await signedIn(athlete);
+    useScreen(tester, width: 375, height: 600);
+    await tester.pumpWidget(const IronFitApp());
+    await tester.pumpAndSettle();
+    final button = find.byTooltip('AI Coach');
+    expect(button, findsOneWidget);
+    final list = find.byType(ListView).first;
+    await tester.drag(list, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    expect(button, findsNothing);
+    await tester.drag(list, const Offset(0, 120));
+    await tester.pumpAndSettle();
+    expect(button, findsOneWidget);
+    await tester.drag(list, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(button, findsNothing);
+    await tester.tap(find.text('Explorer').last);
+    await tester.pumpAndSettle();
+    expect(button, findsOneWidget);
   });
 }

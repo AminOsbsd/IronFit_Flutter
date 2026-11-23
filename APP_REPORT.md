@@ -160,7 +160,7 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 | Run backend | `cd backend && ./mvnw spring-boot:run` (or `1-lancer-serveur.bat`); serves `http://localhost:8080/api` |
 | Run app | `cd app && flutter run -d windows` / `-d chrome` / `-d emulator-5554` (or `2-lancer-app-flutter.bat`) |
 | Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 107 tests on this branch |
-| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 55 tests on this branch (43 style notes from the analyzer, no warnings or errors) |
+| App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 64 tests on this branch (44 style notes from the analyzer, no warnings or errors) |
 | App ↔ backend integration tests | Start a backend on a throwaway DB (README §15), then `flutter test test/backend_integration_test.dart` |
 | Build | `flutter build web` / `windows` / `apk --release`; `./mvnw package` → `target/ironfit-backend-3.0.0.jar` |
 | Deploy | **Not determined from code.** README §18 gives production advice (TLS reverse proxy, strong secrets, `DDL_AUTO=validate`) but there is no deployment tooling. |
@@ -171,7 +171,7 @@ Demo accounts on a fresh database with `SEED_DEMO=true`: `admin`/`admin123`, `sa
 1. Create a key at https://openrouter.ai/keys.
 2. Put `OPENROUTER_API_KEY=sk-or-v1-…` in `backend/.env` (or the environment) and optionally set `OPENROUTER_MODEL`.
 3. Restart the backend.
-4. Open the app and open **AI Coach**. Members: the menu drawer on a phone, or the robot icon at the bottom of the side rail on a wide screen. Coaches and admins: the button at the bottom right. Without a key, the panel says the coach is not configured and the rest of the app is unaffected. The `.env.example` placeholder key is also treated as "not configured".
+4. Open the app and open **AI Coach**. It is the floating button at the bottom right, for every role. Without a key, the panel says the coach is not configured and the rest of the app is unaffected. The `.env.example` placeholder key is also treated as "not configured".
 
 ### Running online payments (Stripe test mode)
 1. Put a `sk_test_…` key in `STRIPE_SECRET_KEY` (`backend/.env`).
@@ -315,10 +315,10 @@ Hiding a button in the app is never the security boundary: `@PreAuthorize`, `Acc
 | Services (`AuthService`, `UserService`, `CoachService`, `ProgramService`, `PlanningService`, `AdminService`, `CatalogService`, `NotificationService`, `RiskService`) | One static class per domain | §8 |
 | `AiCoachService` | **AI Coach** network + SSE parsing | `enabled`, `reply`, `deltas` |
 | `AiCoachChat` (`ChangeNotifier`) | **AI Coach** session conversation | `instance`, `messages`, `status` (`CoachStatus.idle/waiting/streaming/failed`), `error`, `send/retry/stop/clear/history`; replaceable `source`; cleared on `Api.authChanged` |
-| `HomeShell` | Role-based navigation | Bottom `NavigationBar` under 900 px, `NavigationRail` from 900 px; coach workspace switch; `IndexedStack` keeps visited tabs alive; AI Coach entry: drawer / rail icon for members, `AiCoachButton` for coaches and admins |
+| `HomeShell` | Role-based navigation | Bottom `NavigationBar` under 900 px, `NavigationRail` from 900 px; coach workspace switch; `IndexedStack` keeps visited tabs alive; `AiCoachButton` for every role |
 | Screens | `AuthPage`, `MemberHome`, `ExplorePage`, `MySpacePage`, `ProgressPage`, `AttendancePage`, `MyCoachesPage`, `CoachesTab`, `ProgramsPage`, `ProgramDetailPage`, `WorkoutHistoryPage`, `PlanningPage`, `ParticipantsPage`, `CoachHome`, `ClientsPage`, `ClientDetailPage`, `AdminHome`, `RequestsPage`, `CoachingAdminPage`, `ModulesGrid`, `CrudPage`, `RiskPage`, `NotificationsPage`, `ProfilePage`, `LaunchSplash`, `MembershipPage`, `StripePaymentsPage`, `GuidedWorkoutPage`, `GymLocationPage` | `StatefulWidget` + services |
 | `StripeService`, `GymRouteService`, `GymLocation` | Payments API, OpenStreetMap search and routes, gym coordinates | §13 |
-| Widgets | `MemberFitnessHero`, `TrainingProgress`, `Empty`, `AsyncBody`, `NotificationBell`, `SectionHeader`, `StatTile`, `HeroCard`, `StatusPill`, `InitialAvatar`, `IconBadge`, painters, `formDialog` | Shared UI |
+| Widgets | `memberTheme`, `MemberSessionCard`, `MemberIllustration`, `MemberEmptyCard` (`member_design.dart`), `MemberFitnessHero`, `TrainingProgress`, `Empty`, `AsyncBody`, `NotificationBell`, `SectionHeader`, `StatTile`, `HeroCard`, `StatusPill`, `InitialAvatar`, `IconBadge`, painters, `formDialog` | Shared UI |
 | `AiCoachButton`, `AiCoachPanel`, `openAiCoach` | **AI Coach** UI | §12 |
 
 ---
@@ -388,7 +388,7 @@ The important methods, grouped by module. Backend service interfaces take `Curre
 | `CatalogService.*`, `NotificationService.load/markRead/markAllRead/refreshUnread`, `RiskService.atRisk/remind/runNow` | Catalog, notifications, churn |
 | `AiCoachService.enabled()` → `Future<bool>`; `reply(history, {workspace})` → `Stream<String>`; `deltas(Stream<String>)` → `Stream<String>` | **AI Coach** status, request and SSE parsing (missing `done` = interrupted) |
 | `AiCoachChat.send(text)`, `retry()`, `stop()`, `clear()`, `history()` | **AI Coach** state transitions; `history()` keeps the last 20 non-empty messages |
-| `openAiCoach(context, {sidePanel})` | Opens the side panel (≥ 700 px, or always for members) or the bottom sheet |
+| `openAiCoach(context, {sidePanel})` | Opens the side panel (≥ 700 px, or when `sidePanel` is set, which nothing uses any more) or the bottom sheet |
 | Helpers in `common_widgets.dart` | `snack`, `confirm`, `attempt`, `money(v, {currency = 'EUR'})`, `dateOnly`, `localStamp`, `dayLabel`, `pickMethod`; `formDialog` in `form_dialog.dart`; `serverDialog` in `auth_screen.dart` |
 
 ---
@@ -536,7 +536,7 @@ Prefix `/api`, JSON in `snake_case`. Every route needs `Authorization: Bearer <t
 AI Coach needed no new dependencies (the merged features did, see §2). The backend uses the JDK `HttpClient` and the existing Jackson; the app uses the existing `http` package.
 
 ### Request flow
-1. **Opening the panel.** Members open AI Coach from the menu drawer (phone) or the robot icon in the side rail (wide screen) and always get a side panel. Coaches and admins keep the bottom-right button, with a 420 px side panel at ≥ 700 px and a 92 %-height bottom sheet below. In both cases the panel calls `GET /ai-coach/status`.
+1. **Opening the panel.** Every role uses the floating button at the bottom right of the main tabs. `openAiCoach` shows a 420 px side panel at ≥ 700 px and a 92 %-height bottom sheet below. The panel calls `GET /ai-coach/status`.
 2. **Sending a message.** On send (button, suggestion chip, or Enter; Shift+Enter adds a new line), `AiCoachChat` appends the user message and goes to `waiting`, which shows the animated typing indicator.
 3. **Request from the app.** `AiCoachService.reply` POSTs the last 20 messages plus `workspace` (`coach` when a coach is in "Espace coach") through `Api.postStream`, with the JWT and `Accept: text/event-stream, application/json`.
 4. **Context building.** The backend authenticates, applies the per-user rate limit and validates the body. `AiCoachServiceImpl.prepare` then builds the facts for the current mode:
@@ -572,7 +572,7 @@ Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightn
 The manual, OpenRouter and MySQL checks below were made **before** the November merge. After it, the automated checks and a short AI Coach check were rerun (marked below); the new screens, Stripe and MySQL were not.
 - **Automated (after the merge):**
   - backend: 107/107 tests;
-  - app: 55/55 tests, web build OK, analyzer: 43 style notes, no warnings or errors.
+  - app: 64/64 run tests (3 skipped), web build OK, analyzer: 44 style notes, no warnings or errors.
 - **Manual:**
   - The real backend ran on in-memory H2 with demo data and talked to a local mock OpenRouter; the Flutter web build was used in the browser as `youssef`.
   - Desktop side panel and phone bottom sheet, in light and dark mode: OK.
@@ -603,7 +603,7 @@ The manual, OpenRouter and MySQL checks below were made **before** the November 
 
 ## 13. Enhancements merged in November 2026
 
-Source: `integration/ironfit-enhancements` (commits by lyna-ismil and AminOsbsd, 22 November 2026), merged without conflicts.
+Source: `integration/ironfit-enhancements` (commits by lyna-ismil and AminOsbsd, 22 and 23 November 2026), merged twice without conflicts.
 
 ### 13.1 Dated bookings and attendance
 - **Before:** one booking per member and weekly class. **Now:** one booking per member, class **and date** (`dated_bookings`).
@@ -656,8 +656,10 @@ sequenceDiagram
 
 ### 13.6 Interface
 - `LaunchSplash`: a 2.1 s animated introduction while the session loads, skipped when returning from Stripe, with a failure state if loading fails.
-- Redesigned member home (`MemberFitnessHero`) and planning with search and a "Mes réservations" filter.
-- Tabs keep their state when switching. Members find AI Coach in the drawer or side rail instead of the floating button.
+- **Member redesign** (second merge, commit `20f33f6`): members get their own orange, ivory and charcoal theme (`memberTheme`); coaches, admins and the sign-in screen keep theirs. New home banner, session cards and planning header with a date picker.
+- **Mes réservations** has À venir / Passées / Annulées filters for the week shown. Cancelled bookings are deleted by the API, so that tab cannot list them.
+- Tabs keep their state when switching. The floating AI Coach button, removed for members in the first merge, is back for every role. On a phone it hides while scrolling down.
+- The transparent logo has charcoal lettering in light mode (member home and side rail). The member home's "Planning" link sits next to its title, clear of the AI Coach button.
 
 ### 13.7 Tests added
 | Area | Tests |
@@ -666,7 +668,7 @@ sequenceDiagram
 | Dated bookings (`DatedBookingTest`) | 5 |
 | Currency and memberships (`CurrencyMigrationTest` 1, `CurrencyTest` 1, `MembershipRulesTest` 3) | 5 |
 | AI Coach with dated bookings | 1 |
-| Flutter: splash, location routes, payments return, first package, planning, attendance, currency, AI Coach entry points | 25 more than before (55 in total) |
+| Flutter: splash, location routes, payments return, first package, planning, attendance, currency, AI Coach entry points, member redesign | 34 more than before (64 in total) |
 
 Stripe tests use fixtures: no real Stripe payment was made as part of this merge check.
 
@@ -693,6 +695,7 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 - **AI Coach does not see guided-workout details:** its prompt does not include the recorded sets.
 - **Currency on admin screens:** the subscription request and renewal dialogs call `money()` without a currency, so a plan still in TND would be shown in euros.
 - **Plan prices rewritten at startup:** any TND plan named Séance, Mensuel, Trimestriel or Annuel is set to the fixed EUR price, even if the gym had changed its price.
+- On a phone, the floating AI Coach button hides while scrolling down and returns when scrolling up or changing tab; at rest it can still cover content at the bottom right.
 - Unused code: `StripeDtos` and three Stripe settings (§4). `StripeCheckoutService` is dense and duplicates the membership-activation code in `reconcile` and `webhook`.
 - `ClassServiceImpl.update` loads every booking to check capacity, which will slow down as bookings grow.
 - `app/lib` calls public OpenStreetMap servers directly; their usage policies make them unsuitable for heavy production use.

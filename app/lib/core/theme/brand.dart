@@ -5,24 +5,41 @@ import 'app_theme.dart';
 
 /// Logo officiel IronFit (proportions conservées).
 /// [transparent] : variante sans fond noir, pour les surfaces claires ou colorées.
+/// [darkText] : lettres anthracite au lieu de blanches (surfaces claires), l'ambre ne change pas.
+/// [cropped] : enlève les marges vides au-dessus et au-dessous (barre de titre) ; [size] est alors la largeur.
 class BrandLogo extends StatelessWidget {
   final double size;
-  final bool transparent;
-  const BrandLogo({super.key, this.size = 160, this.transparent = false});
+  final bool transparent, darkText, cropped;
+  const BrandLogo({
+    super.key,
+    this.size = 160,
+    this.transparent = false,
+    this.darkText = false,
+    this.cropped = false,
+  });
+
+  /// Le canal bleu distingue le blanc (255) de l'ambre (≈ 88) : seul le blanc est assombri.
+  static const _whiteToCharcoal = ColorFilter.matrix([
+    1, 0, -1.389, 0, 122, //
+    0, 1, -1.389, 0, 122, //
+    0, 0, -0.389, 0, 122, //
+    0, 0, 0, 1, 0,
+  ]);
 
   @override
   Widget build(BuildContext context) {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2;
-    return Image.asset(
+    final image = Image.asset(
       transparent ? AppConfig.logoTransparent : AppConfig.logo,
       width: size,
-      height: size,
-      fit: BoxFit.contain,
+      height: cropped ? size * 0.56 : size,
+      fit: cropped ? BoxFit.cover : BoxFit.contain,
       // décode à la taille affichée (le fichier source fait 3000 × 3000)
       cacheWidth: (size * dpr).round().clamp(64, 2048),
       filterQuality: FilterQuality.medium,
       semanticLabel: 'IronFit — Own your fitness',
     );
+    return darkText ? ColorFiltered(colorFilter: _whiteToCharcoal, child: image) : image;
   }
 }
 

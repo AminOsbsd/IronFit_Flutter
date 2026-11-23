@@ -1,6 +1,7 @@
 import 'gym_location_screen.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import '../core/network/api_client.dart';
 import '../core/theme/app_theme.dart';
@@ -57,7 +58,24 @@ class _HomeShellState extends State<HomeShell> {
     'Profil',
   );
 
-  void go(int i) => setState(() => tab = i);
+  /// Téléphone : le bouton AI Coach s'efface quand on descend dans la page, pour ne rien masquer.
+  bool _coachVisible = true;
+
+  void go(int i) => setState(() {
+    tab = i;
+    _coachVisible = true;
+  });
+
+  bool _onScroll(UserScrollNotification n) {
+    if (n.metrics.axis != Axis.vertical ||
+        n.direction == ScrollDirection.idle) {
+      return false;
+    }
+    final visible =
+        n.direction == ScrollDirection.forward || n.metrics.maxScrollExtent <= 0;
+    if (visible != _coachVisible) setState(() => _coachVisible = visible);
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +140,7 @@ class _HomeShellState extends State<HomeShell> {
         if (_scope != scope) {
           _scope = scope;
           tab = 0;
+          _coachVisible = true;
           _visited.clear();
         }
         if (tab >= pages.length) tab = 0;
@@ -162,7 +181,11 @@ class _HomeShellState extends State<HomeShell> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: BrandLogo(size: extended ? 132 : 72, transparent: true),
+                          child: BrandLogo(
+                            size: extended ? 132 : 72,
+                            transparent: true,
+                            darkText: Theme.of(context).brightness == Brightness.light,
+                          ),
                         ),
                         if (Api.isCoach) ...[
                           const SizedBox(height: 12),
@@ -194,8 +217,11 @@ class _HomeShellState extends State<HomeShell> {
         }
 
         return Scaffold(
-          body: body,
-          floatingActionButton: const AiCoachButton(),
+          body: NotificationListener<UserScrollNotification>(
+            onNotification: _onScroll,
+            child: body,
+          ),
+          floatingActionButton: _coachVisible ? const AiCoachButton() : null,
           bottomNavigationBar: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

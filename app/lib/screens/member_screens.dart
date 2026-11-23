@@ -260,6 +260,7 @@ class _MemberHomeState extends State<MemberHome> {
     final courseCards = <Widget>[
       SectionHeader(
         'Mes prochains cours',
+        inlineAction: isMemberDesign,
         action: TextButton(
           onPressed: () => widget.goTab(1),
           child: const Text('Planning'),
@@ -396,7 +397,12 @@ class _MemberHomeState extends State<MemberHome> {
     return Scaffold(
       appBar: AppBar(
         title: isMemberDesign
-            ? const BrandLogo(size: 58, transparent: true)
+            ? BrandLogo(
+                size: 92,
+                transparent: true,
+                cropped: true,
+                darkText: Theme.of(context).brightness == Brightness.light,
+              )
             : Text('Bonjour, ${me.firstName} 👋'),
         actions: [
           if (isMemberDesign)
