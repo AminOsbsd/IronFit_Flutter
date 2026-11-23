@@ -159,7 +159,7 @@ Read from the environment or from `backend/.env` (copy `backend/.env.example`). 
 |---|---|
 | Run backend | `cd backend && ./mvnw spring-boot:run` (or `1-lancer-serveur.bat`); serves `http://localhost:8080/api` |
 | Run app | `cd app && flutter run -d windows` / `-d chrome` / `-d emulator-5554` (or `2-lancer-app-flutter.bat`) |
-| Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 106 tests on this branch |
+| Backend tests | `cd backend && ./mvnw test` (H2, no MySQL needed): 107 tests on this branch |
 | App analysis + tests | `cd app && flutter analyze && flutter test --exclude-tags integration`: 55 tests on this branch (43 style notes from the analyzer, no warnings or errors) |
 | App ↔ backend integration tests | Start a backend on a throwaway DB (README §15), then `flutter test test/backend_integration_test.dart` |
 | Build | `flutter build web` / `windows` / `apk --release`; `./mvnw package` → `target/ironfit-backend-3.0.0.jar` |
@@ -571,7 +571,7 @@ Free setup tested in November 2026: `OPENROUTER_MODEL=nvidia/nemotron-3.5-lightn
 ### Verification done on this branch
 The manual, OpenRouter and MySQL checks below were made **before** the November merge. After it, the automated checks and a short AI Coach check were rerun (marked below); the new screens, Stripe and MySQL were not.
 - **Automated (after the merge):**
-  - backend: 106/106 tests;
+  - backend: 107/107 tests;
   - app: 55/55 tests, web build OK, analyzer: 43 style notes, no warnings or errors.
 - **Manual:**
   - The real backend ran on in-memory H2 with demo data and talked to a local mock OpenRouter; the Flutter web build was used in the browser as `youssef`.
@@ -684,7 +684,7 @@ Stripe tests use fixtures: no real Stripe payment was made as part of this merge
 - No CI, containerisation or deployment scripts: **Not determined from code** how production is deployed.
 
 **Code quality and tests**
-- The README is partly stale: it states "31 tests" for the backend, while the base branch already had 45 (106 now).
+- The README is partly stale: it states "31 tests" for the backend, while the base branch already had 45 (107 now).
 - Flutter lists are untyped JSON maps; only `AppUser` is a typed model.
 - `test/backend_integration_test.dart` needs a running backend; the `integration` tag description in `dart_test.yaml` still mentions the old Node server.
 
